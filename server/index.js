@@ -463,7 +463,7 @@ async function textFor(selectors) {
 }
 
 /* =========================================================
-   EXPECTED DOM
+   EXPECTED DOM — STATE-AWARE MONITORING
 ========================================================= */
 
 function expectedDomGroups() {
@@ -472,8 +472,9 @@ function expectedDomGroups() {
   const loginPage = isLoginUrl(url);
 
   /*
-   * Login state:
-   * only login controls are relevant.
+   * LOGIN STATE:
+   * Only login controls are relevant during login flow.
+   * Do NOT monitor these after authentication.
    */
 
   if (loginPage && !authenticated) {
@@ -485,8 +486,9 @@ function expectedDomGroups() {
   }
 
   /*
-   * Authenticated state:
-   * account indicators are relevant.
+   * AUTHENTICATED STATE:
+   * Only account indicators matter after successful auth.
+   * Login fields are no longer needed.
    */
 
   if (authenticated && !loginPage) {
@@ -497,8 +499,8 @@ function expectedDomGroups() {
   }
 
   /*
-   * Transitional/unknown state:
-   * don't generate false DOM alarms.
+   * TRANSITIONAL/UNKNOWN STATE:
+   * Don't generate false DOM alarms during navigation.
    */
 
   return new Set();
@@ -2362,7 +2364,7 @@ async function start() {
       );
 
       console.log(
-        ' DOM watchdog: ACTIVE'
+        ' DOM watchdog: ACTIVE (state-aware)'
       );
 
       console.log(

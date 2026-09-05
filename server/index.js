@@ -101,6 +101,11 @@ let gameDomInitialized = false;
 let gameDomEvents = [];
 let eventSequence = 0;
 const eventClients = new Set();
+
+// WebSocket sniffer buffer — only active while a game is connected. See
+// addPageListeners() / recordWsFrame() for what this observes and why.
+let wsFrames = [];
+let wsSniffActive = false;
 let gameDomState = {
   available: false,
   game: null,
@@ -117,7 +122,9 @@ let gameState = {
   primaryLabel: null,
   roundText: null,
   gridCount: null,
-  checkedAt: null
+  checkedAt: null,
+  balance: null,
+  betControls: []
 };
 
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -176,6 +183,39 @@ function addPageListeners() {
       scheduleMonitorRebaseline();
     }
   });
+
+  /*
+   * WebSocket sniffer.
+   *
+   * Aviator-style Spribe games render the live multiplier on a <canvas>,
+   * which has no readable DOM text — the number and the crash moment are
+   * pixels, not text. The real live values travel over the same WebSocket
+   * connection the game itself already opened in this authenticated
+   * session. This only observes traffic the browser already receives;
+   * it does not intercept, modify, or send anything.
+   *
+   * Capture is inert unless wsSniffActive is true (entered automatically
+   * once a game is connected), and the buffer is capped so it can't grow
+   * unbounded.
+   */
+  page.on('websocket', ws => {
+    const wsUrl = ws.url();
+    ws.on('framereceived', event => recordWsFrame('received', wsUrl, event.payload));
+    ws.on('framesent', event => recordWsFrame('sent', wsUrl, event.payload));
+  });
+}
+
+function recordWsFrame(direction, url, payload) {
+  if (!wsSniffActive) return;
+  let text;
+  try {
+    text = typeof payload === 'string' ? payload : payload?.toString('utf8') ?? String(payload);
+  } catch {
+    text = '[unreadable payload]';
+  }
+  if (text.length > 2000) text = text.slice(0, 2000) + '…(truncated)';
+  wsFrames.unshift({ time: now(), direction, url, payload: text });
+  if (wsFrames.length > 300) wsFrames.length = 300;
 }
 
 async function ensureBrowser() {
@@ -277,6 +317,8 @@ function setMonitorMode(next, reason = '') {
   resetDomBaseline(reason || `mode=${next}`);
   gameDomInitialized = false;
   gameDomSnapshot = {};
+  wsSniffActive = (next === 'GAME');
+  if (wsSniffActive) wsFrames = [];
 }
 
 let rebaselineTimer = null;
@@ -380,50 +422,105 @@ async function probeGameGroup(selectors) {
 
 async function snapshotGameState() {
   if (!page || page.isClosed() || !selectedGame) {
-    gameState = { available: false, primaryValue: null, primaryLabel: null, roundText: null, gridCount: null, checkedAt: now() };
+    gameState = { available: false, primaryValue: null, primaryLabel: null, roundText: null, gridCount: null, checkedAt: now(), balance: null, betControls: [] };
     return gameState;
   }
   const game = currentGame();
   try {
     const result = await page.evaluate((key) => {
       const text = (el) => (el?.textContent || '').replace(/\s+/g, ' ').trim();
-      const allFrames = [document, ...Array.from(document.querySelectorAll('iframe')).flatMap(f => {
-        try { return [f.contentDocument].filter(Boolean); } catch { return []; }
-      })];
+      const docs = [document];
+      for (const frame of Array.from(document.querySelectorAll('iframe'))) {
+        try { if (frame.contentDocument) docs.push(frame.contentDocument); } catch {}
+      }
+      let balance = null;
+      const balanceSelectors = ['._balance_6umpy_40', '.balance-amount'];
+      for (const doc of docs) {
+        for (const sel of balanceSelectors) {
+          try {
+            const el = doc.querySelector(sel);
+            const t = text(el);
+            if (t) { balance = t; break; }
+          } catch {}
+        }
+        if (balance) break;
+      }
+      const betControls = [];
+      if (key === 'aviator') {
+        Array.from(document.querySelectorAll('.bet-control')).slice(0, 2).forEach((control, index) => {
+          const amountInput = control.querySelector('input[inputmode="decimal"]');
+          const tab = control.querySelector('.navigation-switcher .tab.active');
+
+          // A bet-control cycles through three distinct buttons depending on
+          // round phase. All three share class "bet" on BetPawa's Aviator, so
+          // they must be told apart by their OTHER class, not by ".bet" alone:
+          //   BET     -> button.bet.btn-success  ("Bet", place a wager)
+          //   CANCEL  -> button.bet.btn-danger   ("Cancel", wager already placed, waiting for round)
+          //   CASHOUT -> button.cashout          ("Cash Out", round in flight)
+          const betBtn = control.querySelector('.buttons-block button.bet.btn-success');
+          const cancelBtn = control.querySelector('.buttons-block button.bet.btn-danger');
+          const cashoutBtn = control.querySelector('.buttons-block button.cashout');
+
+          let state = 'BET';
+          let activeBtn = betBtn;
+          let amount = (amountInput?.value || text(control.querySelector('.buttons-block .amount')) || '1.00');
+          let buttonText = 'Bet';
+
+          if (cashoutBtn) {
+            state = 'CASHOUT';
+            activeBtn = cashoutBtn;
+            amount = text(cashoutBtn.querySelector('.amount')) || amount;
+            buttonText = 'Cash Out';
+          } else if (cancelBtn) {
+            state = 'CANCEL';
+            activeBtn = cancelBtn;
+            buttonText = 'Cancel';
+          } else if (betBtn) {
+            state = 'BET';
+            activeBtn = betBtn;
+            amount = text(betBtn.querySelector('.amount')) || amount;
+            buttonText = 'Bet';
+          } else {
+            activeBtn = null;
+          }
+
+          betControls.push({
+            index: index + 1,
+            label: index === 0 ? '2' : '3',
+            state,
+            amount: String(amount).replace(/\s+/g, ' ').trim(),
+            buttonText,
+            ready: !!activeBtn && !activeBtn.disabled,
+            disabled: !activeBtn || !!activeBtn.disabled,
+            tab: text(tab) || 'Bet'
+          });
+        });
+      }
       const candidates = [];
       const selectors = key === 'aviator'
         ? ['.payout','[class*="payout"]','[class*="Payout"]','[class*="multiplier"]','[class*="Multiplier"]']
         : ['[class*="mine"]','[id*="mine"]','[class*="Mine"]','[id*="Mine"]','[class*="grid"]','[class*="Grid"]','[class*="cell"]','[class*="Cell"]'];
-      for (const doc of allFrames) {
+      for (const doc of docs) {
         for (const sel of selectors) {
           let nodes = [];
           try { nodes = Array.from(doc.querySelectorAll(sel)).slice(0, 30); } catch {}
-          for (const node of nodes) {
-            const t = text(node);
-            if (t) candidates.push(t);
-          }
+          for (const node of nodes) { const t = text(node); if (t) candidates.push(t); }
         }
       }
       const bodyText = text(document.body);
       if (key === 'aviator') {
         const match = candidates.join(' ').match(/(?:^|\s)(\d+(?:\.\d+)?x)(?=\s|$)/i) || bodyText.match(/(?:^|\s)(\d+(?:\.\d+)?x)(?=\s|$)/i);
-        return { available: true, primaryValue: match ? match[1] : null, primaryLabel: match ? 'MULTIPLIER' : 'MULTIPLIER WAITING', roundText: candidates.slice(0,3).join(' • ') || 'Waiting for multiplier data…', gridCount: null };
+        return { available: true, primaryValue: match ? match[1] : null, primaryLabel: match ? 'MULTIPLIER' : 'MULTIPLIER WAITING', roundText: candidates.slice(0,3).join(' • ') || 'Waiting for multiplier data…', gridCount: null, balance, betControls };
       }
       let gridCount = 0;
-      for (const doc of allFrames) {
-        try { gridCount += doc.querySelectorAll('[class*="cell"],[class*="Cell"],[data-test-id*="cell"],[data-testid*="cell"]').length; } catch {}
-      }
-      const mineText = candidates.slice(0,4).join(' • ');
-      return { available: true, primaryValue: gridCount ? String(gridCount) : null, primaryLabel: gridCount ? 'GRID CELLS DETECTED' : 'GAME STATE', roundText: mineText || 'Waiting for mine/grid data…', gridCount };
+      for (const doc of docs) { try { gridCount += doc.querySelectorAll('[class*="cell"],[class*="Cell"],[data-test-id*="cell"],[data-testid*="cell"]').length; } catch {} }
+      return { available: true, primaryValue: gridCount ? String(gridCount) : null, primaryLabel: gridCount ? 'GRID CELLS DETECTED' : 'GAME STATE', roundText: candidates.slice(0,4).join(' • ') || 'Waiting for mine/grid data…', gridCount, balance, betControls };
     }, selectedGame);
-    const previousValue = gameState.primaryValue;
-    const previousRound = gameState.roundText;
+    const changed = gameState.primaryValue !== result.primaryValue || gameState.roundText !== result.roundText || gameState.balance !== result.balance;
     gameState = { ...result, gameName: game?.name || null, checkedAt: now() };
-    if (gameState.primaryValue !== previousValue || gameState.roundText !== previousRound) {
-      pushStateEvent('GAME_STATE_CHANGED', 'Live game state changed.', { primaryValue: gameState.primaryValue, primaryLabel: gameState.primaryLabel, roundText: gameState.roundText, gridCount: gameState.gridCount });
-    }
+    if (changed) pushStateEvent('GAME_STATE_CHANGED', 'Live game state changed.', { primaryValue: gameState.primaryValue, primaryLabel: gameState.primaryLabel, roundText: gameState.roundText, gridCount: gameState.gridCount, balance: gameState.balance, betControls: gameState.betControls });
   } catch {
-    gameState = { available: false, primaryValue: null, primaryLabel: null, roundText: null, gridCount: null, checkedAt: now() };
+    gameState = { available: false, primaryValue: null, primaryLabel: null, roundText: null, gridCount: null, checkedAt: now(), balance: null, betControls: [] };
   }
   return gameState;
 }
@@ -760,6 +857,15 @@ app.get('/api/status', async (req, res) => {
   });
 });
 
+app.get('/api/ws-sniff', (req, res) => {
+  res.json({ ok: true, active: wsSniffActive, mode: monitorMode, count: wsFrames.length, frames: wsFrames.slice(0, 150) });
+});
+
+app.post('/api/ws-sniff/clear', (req, res) => {
+  wsFrames = [];
+  res.json({ ok: true, count: 0 });
+});
+
 app.get('/api/game-dom', async (req, res) => {
   if (!selectedGame) return res.status(400).json({ ok: false, message: 'No game is connected.' });
   const gameDom = await snapshotGameDomHealth();
@@ -838,6 +944,59 @@ app.post('/api/connect-game', async (req, res) => {
   }
 });
 
+app.post('/api/manual-bet', async (req, res) => {
+  const slot = Number(req.body?.slot);
+  if (![1, 2].includes(slot)) return res.status(400).json({ ok: false, message: 'Choose bet control 1 or 2.' });
+  if (!selectedGame || selectedGame !== 'aviator') return res.status(400).json({ ok: false, message: 'Manual bet controls are available for Aviator only.' });
+  try {
+    const auth = await verifyAuthenticatedSession(2);
+    if (!auth.authenticated) {
+      authenticated = false;
+      connectorState = 'SESSION_LOST';
+      return res.status(401).json({ ok: false, code: 'AUTH_REQUIRED', message: 'Authentication could not be verified.' });
+    }
+    const controls = await page.locator('.bet-control').all();
+    if (!controls[slot - 1]) return res.status(404).json({ ok: false, message: `Bet control ${slot} was not found.` });
+    const control = controls[slot - 1];
+
+    /*
+     * A bet-control shows exactly one of three buttons depending on the
+     * live round phase, and this is re-checked fresh right before clicking
+     * (never from cached state) so the correct action is always taken:
+     *   BET     -> button.bet.btn-success  (place a wager)
+     *   CANCEL  -> button.bet.btn-danger   (cancel a pending wager)
+     *   CASHOUT -> button.cashout          (cash out mid-flight)
+     */
+
+    const betBtn = control.locator('.buttons-block button.bet.btn-success').first();
+    const cancelBtn = control.locator('.buttons-block button.bet.btn-danger').first();
+    const cashoutBtn = control.locator('.buttons-block button.cashout').first();
+
+    let action = null;
+    let button = null;
+
+    if (await cashoutBtn.count()) { action = 'CASHOUT'; button = cashoutBtn; }
+    else if (await cancelBtn.count()) { action = 'CANCEL'; button = cancelBtn; }
+    else if (await betBtn.count()) { action = 'BET'; button = betBtn; }
+
+    if (!button) return res.status(404).json({ ok: false, message: `No active action button was found for control ${slot}.` });
+    if (!(await button.isVisible().catch(() => false)) || !(await button.isEnabled().catch(() => false))) {
+      return res.status(409).json({ ok: false, message: `The ${action.toLowerCase()} action for control ${slot} is not ready.` });
+    }
+
+    const amount = action === 'CASHOUT'
+      ? await button.locator('.amount').first().innerText().catch(() => '')
+      : await control.locator('input[inputmode="decimal"]').first().inputValue().catch(async () => await control.locator('.buttons-block .amount').first().innerText().catch(() => '1.00'));
+
+    await button.click();
+    pushStateEvent('MANUAL_BET_CLICK', `Manual ${action} on control ${slot === 1 ? '2' : '3'} clicked.`, { slot, action, amount });
+    await snapshotGameState();
+    return res.json({ ok: true, slot, action, label: slot === 1 ? '2' : '3', amount, message: `Manual ${action} clicked by user.` });
+  } catch {
+    return res.status(500).json({ ok: false, message: 'Manual action click could not be completed.' });
+  }
+});
+
 app.post('/api/reset', async (req, res) => {
   authenticated = false;
   selectedGame = null;
@@ -850,6 +1009,8 @@ app.post('/api/reset', async (req, res) => {
   domEvents = [];
   gameDomEvents = [];
   eventSequence = 0;
+  wsFrames = [];
+  wsSniffActive = false;
   gameDomState = { available: false, game: null, url: null, title: null, frames: [], groups: {}, checkedAt: null, mutationVersion: 0 };
   gameState = { available: false, primaryValue: null, primaryLabel: null, roundText: null, gridCount: null, checkedAt: null };
   try {
@@ -863,6 +1024,39 @@ app.post('/api/reset', async (req, res) => {
     if (!domWatchdogTimer) startDomWatchdog();
   } catch {}
   res.json({ ok: true, state: connectorState });
+});
+
+app.get('/ws-sniff.html', (req, res) => {
+  res.type('html').send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>WTS WebSocket Sniffer</title>
+  <style>body{background:#0a0d0e;color:#dde4e1;font-family:Consolas,monospace;padding:16px}
+  h1{color:#9ce800;font-size:16px}
+  .frame{border:1px solid #223022;border-radius:8px;padding:10px;margin-bottom:8px;white-space:pre-wrap;word-break:break-all;font-size:12px}
+  .sent{border-left:4px solid #4aa3ff}.received{border-left:4px solid #9ce800}
+  .meta{color:#7cc200;font-size:11px;margin-bottom:4px}
+  button{background:#9ce800;color:#0e1310;border:0;padding:8px 14px;border-radius:6px;font-weight:bold;cursor:pointer;margin-right:8px}
+  #status{color:#8e989d;font-size:12px;margin-bottom:12px}</style></head>
+  <body>
+    <h1>WTS WebSocket Sniffer — live game traffic</h1>
+    <div id="status">Loading…</div>
+    <button onclick="clearFrames()">Clear buffer</button>
+    <button onclick="load()">Refresh now</button>
+    <div id="frames"></div>
+    <script>
+      async function load() {
+        const r = await fetch('/api/ws-sniff', { cache: 'no-store' });
+        const d = await r.json();
+        document.getElementById('status').textContent =
+          'active: ' + d.active + ' | mode: ' + d.mode + ' | captured: ' + d.count + ' (showing latest ' + d.frames.length + ')';
+        document.getElementById('frames').innerHTML = d.frames.map(f =>
+          '<div class="frame ' + f.direction + '"><div class="meta">' + f.time + ' — ' + f.direction.toUpperCase() + ' — ' + f.url + '</div>' +
+          f.payload.replace(/</g,'&lt;') + '</div>'
+        ).join('');
+      }
+      async function clearFrames() { await fetch('/api/ws-sniff/clear', { method: 'POST' }); load(); }
+      load();
+      setInterval(load, 1500);
+    </script>
+  </body></html>`);
 });
 
 app.use(express.static(path.join(__dirname, '..', 'frontend')));

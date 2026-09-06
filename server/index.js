@@ -118,6 +118,7 @@ let liveRoundState = {
   timeLeft: null,
   updatedAt: null
 };
+let crashSignal = null;
 
 // Auto-captured screenshot of the real page at the moment a live crash was
 // confirmed — this exists so the person doesn't have to race a fast-fading
@@ -343,58 +344,231 @@ function classifyGameFrame(buf) {
 function applyLiveRoundUpdate(classification) {
   const { tag, fields } = classification;
 
+  /*
+   * ============================================================
+   * LIVE TICK
+   * ============================================================
+   */
   if (tag === 'LIVE_TICK' && typeof fields.x === 'number') {
     liveRoundState.phase = 'FLYING';
     liveRoundState.multiplier = fields.x;
     liveRoundState.updatedAt = now();
+
     gameState.wsMultiplier = `${fields.x.toFixed(2)}x`;
     gameState.wsConnected = true;
-    publishLiveTick('LIVE_TICK', { phase: 'FLYING', multiplier: fields.x, roundId: liveRoundState.roundId });
+
+    publishLiveTick('LIVE_TICK', {
+      phase: 'FLYING',
+      multiplier: fields.x,
+      roundId: liveRoundState.roundId
+    });
+
     return;
   }
 
   const wasFlying = liveRoundState.phase === 'FLYING';
 
+  /*
+   * ============================================================
+   * AUTHORITATIVE CRASH X SIGNAL
+   *
+   * IMPORTANT:
+   * - crashX comes directly from authenticated WebSocket
+   * - do NOT wait for chart
+   * - do NOT wait for screenshot
+   * - do NOT change phase to CRASHED yet
+   * - plane remains FLYING
+   * ============================================================
+   */
   if (tag === 'CRASH' && typeof fields.crashX === 'number') {
-    if (fields.roundId != null && liveRoundState.roundId != null && fields.roundId !== liveRoundState.roundId) {
+
+    /*
+     * Ignore a crash signal belonging to another round.
+     */
+    if (
+      fields.roundId != null &&
+      liveRoundState.roundId != null &&
+      fields.roundId !== liveRoundState.roundId
+    ) {
       pushRoundHistory(fields.crashX);
-      return; // belongs to a different round — history only, not live state
+      return;
     }
-    if (!wasFlying) { pushRoundHistory(fields.crashX); return; }
-    liveRoundState.phase = 'CRASHED';
-    liveRoundState.multiplier = fields.crashX;
+
+    /*
+     * Do not manufacture a crash signal if we never had
+     * an active flying round.
+     */
+    if (!wasFlying) {
+      pushRoundHistory(fields.crashX);
+      return;
+    }
+
+    /*
+     * Store the REAL crashX immediately.
+     */
+    crashSignal = {
+      phase: 'CRASH_SIGNAL',
+      crashX: fields.crashX,
+      roundId: liveRoundState.roundId,
+      signalReceivedAt: now()
+    };
+
+    /*
+     * KEEP THE PLANE FLYING.
+     *
+     * multiplier remains the last LIVE_TICK multiplier.
+     * crashX is a separate authoritative signal.
+     */
+    liveRoundState.phase = 'FLYING';
     liveRoundState.updatedAt = now();
-    gameState.wsMultiplier = `${fields.crashX.toFixed(2)}x`;
+
+    /*
+     * Immediately notify frontend.
+     *
+     * This must happen before chart/screenshot confirmation.
+     */
+    publishLiveTick('CRASH_SIGNAL_LIVE', {
+      phase: 'FLYING',
+      multiplier: liveRoundState.multiplier,
+      crashX: fields.crashX,
+      roundId: liveRoundState.roundId,
+      signalReceivedAt: crashSignal.signalReceivedAt
+    });
+
+    /*
+     * Keep history behavior.
+     */
     pushRoundHistory(fields.crashX);
-    publishLiveTick('CRASH_LIVE', { phase: 'CRASHED', multiplier: fields.crashX, roundId: liveRoundState.roundId });
-    captureCrashScreenshot({ roundId: liveRoundState.roundId, multiplier: fields.crashX });
+
+    /*
+     * Screenshot is intentionally asynchronous.
+     * It MUST NOT delay CRASH_SIGNAL_LIVE.
+     */
+    captureCrashScreenshot({
+      roundId: liveRoundState.roundId,
+      multiplier: fields.crashX
+    });
+
     return;
   }
 
-  if (tag === 'ROUND_CHART_INFO' && typeof fields.maxMultiplier === 'number') {
-    if (!wasFlying || (fields.roundId != null && liveRoundState.roundId != null && fields.roundId !== liveRoundState.roundId)) {
+  /*
+   * ============================================================
+   * CHART CONFIRMATION
+   *
+   * This is the later confirmation that the round actually
+   * finished. Only here do we transition FLYING -> CRASHED.
+   * ============================================================
+   */
+  if (
+    tag === 'ROUND_CHART_INFO' &&
+    typeof fields.maxMultiplier === 'number'
+  ) {
+
+    /*
+     * Ignore chart information for another/inactive round.
+     */
+    if (
+      !wasFlying ||
+      (
+        fields.roundId != null &&
+        liveRoundState.roundId != null &&
+        fields.roundId !== liveRoundState.roundId
+      )
+    ) {
       pushRoundHistory(fields.maxMultiplier);
-      return; // historical chart burst for a past round — do not touch live state
+      return;
     }
+
+    /*
+     * Prefer the authoritative crashX already received from
+     * the WebSocket signal.
+     *
+     * Fallback to chart maxMultiplier only if no crash signal
+     * was received.
+     */
+    const finalCrashX =
+      crashSignal &&
+      crashSignal.crashX != null &&
+      (
+        crashSignal.roundId == null ||
+        liveRoundState.roundId == null ||
+        crashSignal.roundId === liveRoundState.roundId
+      )
+        ? crashSignal.crashX
+        : fields.maxMultiplier;
+
+    /*
+     * NOW the round is officially finished.
+     */
     liveRoundState.phase = 'CRASHED';
-    liveRoundState.multiplier = fields.maxMultiplier;
+    liveRoundState.multiplier = finalCrashX;
     liveRoundState.updatedAt = now();
-    gameState.wsMultiplier = `${fields.maxMultiplier.toFixed(2)}x`;
-    pushRoundHistory(fields.maxMultiplier);
-    publishLiveTick('CRASH_LIVE', { phase: 'CRASHED', multiplier: fields.maxMultiplier, roundId: liveRoundState.roundId });
-    captureCrashScreenshot({ roundId: liveRoundState.roundId, multiplier: fields.maxMultiplier });
+
+    gameState.wsMultiplier = `${finalCrashX.toFixed(2)}x`;
+
+    pushRoundHistory(finalCrashX);
+
+    /*
+     * Final crash confirmation.
+     */
+    publishLiveTick('CRASH_LIVE', {
+      phase: 'CRASHED',
+      multiplier: finalCrashX,
+      crashX: finalCrashX,
+      roundId: liveRoundState.roundId
+    });
+
+    captureCrashScreenshot({
+      roundId: liveRoundState.roundId,
+      multiplier: finalCrashX
+    });
+
     return;
   }
 
+  /*
+   * ============================================================
+   * STATE CHANGE
+   * ============================================================
+   */
   if (tag === 'STATE_CHANGE') {
-    if (fields.roundId != null) liveRoundState.roundId = fields.roundId;
-    if (fields.timeLeft != null) liveRoundState.timeLeft = fields.timeLeft;
-    if (fields.newStateId != null) { liveRoundState.newStateId = fields.newStateId; }
+
+    /*
+     * If a new round ID arrives, the previous crash signal
+     * belongs to the previous round and must be cleared.
+     */
+    if (
+      fields.roundId != null &&
+      liveRoundState.roundId != null &&
+      fields.roundId !== liveRoundState.roundId
+    ) {
+      crashSignal = null;
+    }
+
+    if (fields.roundId != null) {
+      liveRoundState.roundId = fields.roundId;
+    }
+
+    if (fields.timeLeft != null) {
+      liveRoundState.timeLeft = fields.timeLeft;
+    }
+
+    if (fields.newStateId != null) {
+      liveRoundState.newStateId = fields.newStateId;
+    }
+
     liveRoundState.updatedAt = now();
-    publishLiveTick('STATE_LIVE', { newStateId: fields.newStateId, roundId: liveRoundState.roundId, timeLeft: fields.timeLeft });
+
+    publishLiveTick('STATE_LIVE', {
+      newStateId: fields.newStateId,
+      roundId: liveRoundState.roundId,
+      timeLeft: fields.timeLeft
+    });
+
+    return;
   }
 }
-
 function pushRoundHistory(multiplier) {
   const label = `${Number(multiplier).toFixed(2)}x`;
   if (!Array.isArray(gameState.roundHistory)) gameState.roundHistory = [];
@@ -1110,6 +1284,7 @@ app.get('/api/status', async (req, res) => {
     gameDomHealth: gameDom,
     gameState,
     liveRoundState,
+    crashSignal,
     gameDomEvents: gameDomEvents.slice(0, 15),
     mutationVersion: pageMutationVersion,
     startupReady
@@ -1117,9 +1292,23 @@ app.get('/api/status', async (req, res) => {
 });
 
 app.get('/api/ws-sniff', (req, res) => {
-  res.json({ ok: true, active: wsSniffActive, mode: monitorMode, liveRoundState, lastCrashScreenshot: lastCrashScreenshot ? { roundId: lastCrashScreenshot.roundId, multiplier: lastCrashScreenshot.multiplier, capturedAt: lastCrashScreenshot.capturedAt } : null, count: wsFrames.length, frames: wsFrames.slice(0, 150) });
+  res.json({
+    ok: true,
+    active: wsSniffActive,
+    mode: monitorMode,
+    liveRoundState,
+    crashSignal,
+    lastCrashScreenshot: lastCrashScreenshot
+      ? {
+          roundId: lastCrashScreenshot.roundId,
+          multiplier: lastCrashScreenshot.multiplier,
+          capturedAt: lastCrashScreenshot.capturedAt
+        }
+      : null,
+    count: wsFrames.length,
+    frames: wsFrames.slice(0, 150)
+  });
 });
-
 app.get('/api/crash-screenshot', (req, res) => {
   if (!lastCrashScreenshot) return res.status(404).json({ ok: false, message: 'No crash captured yet.' });
   res.json({ ok: true, ...lastCrashScreenshot });
@@ -1432,7 +1621,9 @@ app.post('/api/reset', async (req, res) => {
   wsFrames = [];
   wsSniffActive = false;
   liveRoundState = { phase: 'UNKNOWN', multiplier: null, roundId: null, newStateId: null, timeLeft: null, updatedAt: null };
+  crashSignal = null;
   lastCrashScreenshot = null;
+  
   gameDomState = { available: false, game: null, url: null, title: null, frames: [], groups: {}, checkedAt: null, mutationVersion: 0 };
   gameState = { available: false, primaryValue: null, primaryLabel: null, roundText: null, gridCount: null, checkedAt: null, balance: null, betControls: [], roundHistory: [], wsMultiplier: null, wsConnected: false };
   try {

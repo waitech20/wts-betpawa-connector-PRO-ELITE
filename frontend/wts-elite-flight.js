@@ -28,11 +28,12 @@
   .wts-elite-round{position:absolute;z-index:7;right:14px;bottom:12px;font-size:9px;color:#78839a;text-align:right}.wts-elite-round b{display:block;color:#b9c1d2;font-size:10px;margin-top:2px}
   @keyframes eliteGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(255,23,79,.45))}50%{filter:drop-shadow(0 0 10px rgba(255,23,79,.75))}}@keyframes eliteSmoke{from{transform:translate(-2px,1px) scale(.8)}to{transform:translate(-12px,-3px) scale(1.5);opacity:.03}}@keyframes elitePulse{50%{opacity:.35}}
   .wts-elite-crashbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;margin:0 0 10px;border-radius:12px;background:rgba(255,23,79,.055);border:1px solid rgba(255,23,79,.12)}.wts-elite-crashbar span{font-size:9px;font-weight:900;letter-spacing:1px;color:#8993a7}.wts-elite-crashbar strong{font-size:16px;color:#ff174f}.wts-elite-crashbar.waiting strong{color:#687287}
+  .wts-crash-spinner{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.18);border-top-color:#ff174f;border-radius:50%;animation:wtsCrashSpin .65s linear infinite;vertical-align:-2px}@keyframes wtsCrashSpin{to{transform:rotate(360deg)}}
   .wts-phase-flying .wts-elite-flight{border-color:rgba(0,230,118,.18)}
   `;
 
   function addStyle(){if(document.getElementById('wts-elite-flight-style'))return;const s=document.createElement('style');s.id='wts-elite-flight-style';s.textContent=css;document.head.appendChild(s)}
-  function esc(v){return String(v==null?'':v).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\\':'&#92;','"':'&quot;'}[c]))}
+  function esc(v){return String(v==null?'':v).replace(/[&<>\\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\\':'&#92;','"':'&quot;'}[c]))}
   function num(v){const n=Number(v);return Number.isFinite(n)?n:null}
 
   function ensure(){
@@ -45,7 +46,7 @@
       if(old) old.replaceWith(host); else card.querySelector('.wts-p2-value')?.insertAdjacentElement('afterend',host);
     }
     if(!host.querySelector('.wts-elite-flight')){
-      host.innerHTML=`<div class="wts-elite-crashbar waiting"><span>CRASH X • LIVE TELEMETRY</span><strong id="wts-elite-crash">—</strong></div><div class="wts-elite-flight" id="wts-elite-flight"><div class="wts-elite-stars"></div><div class="wts-elite-cloud c1"></div><div class="wts-elite-cloud c2"></div><div class="wts-elite-horizon"></div><div class="wts-elite-head"><span id="wts-elite-state" class="wts-elite-state">WAITING</span><span id="wts-elite-warning" class="wts-elite-warning">⚠ CRASH SIGNAL CONFIRMED</span></div><svg class="wts-elite-svg" viewBox="0 0 900 285" preserveAspectRatio="none"><defs><filter id="eliteGlow"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><path id="wts-elite-trail" class="wts-elite-trail" d="M20 255 L20 255"/><path id="wts-elite-path" class="wts-elite-path" d="M20 255 L20 255"/><g id="wts-elite-smokes"></g><g id="wts-elite-plane" class="wts-elite-plane" transform="translate(20 255)"><path class="wts-elite-plane-wing" d="M-27 4 L-2 -3 L17 -15 L10 0 L32 7 L5 7 L-3 4 Z"/><path class="wts-elite-plane-body" d="M-30 1 L-6 -3 L20 0 L31 5 L7 7 L-7 4 L-30 3 Z"/><path class="wts-elite-plane-accent" d="M-8 -2 L7 0 L3 3 L-12 2 Z"/><ellipse class="wts-elite-plane-window" cx="10" cy="1" rx="4" ry="2"/></g></svg><div class="wts-elite-bottom"><div class="wts-elite-multi"><span id="wts-elite-multi">—</span><small id="wts-elite-label">WAITING</small></div><div class="wts-elite-round">ROUND<b id="wts-elite-round">—</b></div></div></div>`;
+      host.innerHTML=`<div class="wts-elite-crashbar waiting"><span>CRASH X • LIVE TELEMETRY</span><strong id="wts-elite-crash"><span class="wts-crash-spinner"></span></strong></div><div class="wts-elite-flight" id="wts-elite-flight"><div class="wts-elite-stars"></div><div class="wts-elite-cloud c1"></div><div class="wts-elite-cloud c2"></div><div class="wts-elite-horizon"></div><div class="wts-elite-head"><span id="wts-elite-state" class="wts-elite-state">WAITING</span><span id="wts-elite-warning" class="wts-elite-warning">⚠ CRASH SIGNAL CONFIRMED</span></div><svg class="wts-elite-svg" viewBox="0 0 900 285" preserveAspectRatio="none"><defs><filter id="eliteGlow"><feGaussianBlur stdDeviation="2.6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs><path id="wts-elite-trail" class="wts-elite-trail" d="M20 255 L20 255"/><path id="wts-elite-path" class="wts-elite-path" d="M20 255 L20 255"/><g id="wts-elite-smokes"></g><g id="wts-elite-plane" class="wts-elite-plane" transform="translate(20 255)"><path class="wts-elite-plane-wing" d="M-27 4 L-2 -3 L17 -15 L10 0 L32 7 L5 7 L-3 4 Z"/><path class="wts-elite-plane-body" d="M-30 1 L-6 -3 L20 0 L31 5 L7 7 L-7 4 L-30 3 Z"/><path class="wts-elite-plane-accent" d="M-8 -2 L7 0 L3 3 L-12 2 Z"/><ellipse class="wts-elite-plane-window" cx="10" cy="1" rx="4" ry="2"/></g></svg><div class="wts-elite-bottom"><div class="wts-elite-multi"><span id="wts-elite-multi">—</span><small id="wts-elite-label">WAITING</small></div><div class="wts-elite-round">ROUND<b id="wts-elite-round">—</b></div></div></div>`;
     }
     return host;
   }
@@ -63,22 +64,22 @@
     } else if(phase==='CRASHED'){
       flight.className='wts-elite-flight crashed';stateEl.className='wts-elite-state crashed';stateEl.textContent='CRASHED';lab.textContent='FLEW AWAY';multi.textContent=(crashX??lastMultiplier??0).toFixed(2)+'x';
     } else {flight.className='wts-elite-flight';stateEl.className='wts-elite-state';stateEl.textContent='WAITING';lab.textContent='WAITING';multi.textContent='—'}
-    if(crashX!=null){crashEl.textContent=crashX.toFixed(2)+'x';bar.classList.remove('waiting')}else{crashEl.textContent='—';bar.classList.add('waiting')}
+    if(crashX!=null){crashEl.textContent=crashX.toFixed(2)+'x';bar.classList.remove('waiting')}else{crashEl.innerHTML='<span class="wts-crash-spinner"></span>';bar.classList.add('waiting')}
     if(path&&points.length){const d=points.map((p,i)=>`${i?'L':'M'} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');path.setAttribute('d',d);trail.setAttribute('d',d);const p=points[points.length-1];plane.setAttribute('transform',`translate(${p[0].toFixed(1)} ${p[1].toFixed(1)}) rotate(-${Math.min(18,Math.max(4,p[2]))})`);}
     if(smoke&&phase==='CRASH_SIGNAL'){smoke.innerHTML='<circle class="wts-elite-smoke" cx="0" cy="0" r="5"/><circle class="wts-elite-smoke" cx="-10" cy="3" r="4"/>'}else if(smoke)smoke.innerHTML='';
   }
 
   function ingest(type,d){
-    d=d||{}; const rid=d.roundId ?? d.round ?? null; if(rid!=null&&rid!==currentRound){currentRound=rid;points=[];crashX=null}
+    d=d||{}; const rid=d.roundId ?? d.round ?? null; if(rid!=null&&rid!==currentRound){currentRound=rid;points=[];crashX=null;lastMultiplier=null}
     if(type==='LIVE_TICK'){
       const m=num(d.multiplier ?? d.x);if(m==null)return;lastMultiplier=m;phase='FLYING';
       const x=Math.min(850,35+points.length*12);const y=245-Math.min(205,Math.log(Math.max(1,m))*48);points.push([x,y,Math.min(18,4+Math.log(Math.max(1,m))*2)]);if(points.length>70)points.shift();render();
     } else if(type==='CRASH_SIGNAL_LIVE'){
-      const cx=num(d.crashX);if(cx!=null)crashX=cx;lastMultiplier=num(d.multiplier)??lastMultiplier;phase='CRASH_SIGNAL';render();
+      const cx=num(d.crashX);if(cx!=null)crashX=cx;lastMultiplier=num(d.multiplier)??lastMultiplier;phase='FLYING';render();
     } else if(type==='CHART_CONFIRM_LIVE'){
       const cx=num(d.crashX);if(cx!=null)crashX=cx;phase='CRASH_SIGNAL';render();
     } else if(type==='CRASH_LIVE'){
-      const cx=num(d.multiplier ?? d.crashX);if(cx!=null)crashX=cx;lastMultiplier=cx??lastMultiplier;phase='CRASHED';render();
+      const cx=num(d.multiplier ?? d.crashX);if(cx!=null)crashX=cx;phase='CRASHED';render();
     } else if(type==='STATE_LIVE'&&d.newStateId!=null){phase='WAITING';lastMultiplier=null;crashX=null;points=[];render()}
   }
 

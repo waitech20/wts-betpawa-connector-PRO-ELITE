@@ -9,47 +9,57 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply immediate crashX telemetry patch
+      - name: Apply immediate crashX telemetry and bet-control patch
         run: |
           python3 <<'PY'
           from pathlib import Path
-          import re, subprocess, sys
+          import subprocess
 
           server = Path('server/index.js')
           frontend = Path('frontend/wts-login.js')
           index = Path('frontend/index.html')
+          elite = Path('frontend/wts-elite-flight.js')
           s = server.read_text(encoding='utf-8')
           f = frontend.read_text(encoding='utf-8')
           h = index.read_text(encoding='utf-8')
+          e = elite.read_text(encoding='utf-8') if elite.exists() else ''
 
-          # Backend: add authoritative signal state once.
+          # Backend: authoritative crash-signal state. It is telemetry only.
           if 'WTS_CRASH_SIGNAL_LIVE_V2' not in s:
               marker = "let gameState = {"
-              state = """// WTS_CRASH_SIGNAL_LIVE_V2\n// Authoritative telemetry only: populated immediately when the authenticated\n// game WebSocket delivers a crashX field. This is not a prediction.\nlet crashSignal = {\n  phase: 'WAITING',\n  crashX: null,\n  roundId: null,\n  signalReceivedAt: null\n};\n\n"""
+              state = """// WTS_CRASH_SIGNAL_LIVE_V2
+// Authoritative telemetry only: populated immediately when the authenticated
+// game WebSocket delivers a crashX field. This is not a prediction.
+let crashSignal = {
+  phase: 'WAITING',
+  crashX: null,
+  roundId: null,
+  signalReceivedAt: null
+};
+
+"""
               if marker not in s:
                   raise SystemExit('gameState marker not found')
               s = s.replace(marker, state + marker, 1)
 
-          # Backend: replace only the CRASH branch inside applyLiveRoundUpdate.
           start = s.find("  if (tag === 'CRASH' && typeof fields.crashX === 'number') {")
           end = s.find("  if (tag === 'ROUND_CHART_INFO' && typeof fields.maxMultiplier === 'number') {", start)
           if start < 0 or end < 0:
               raise SystemExit('CRASH/ROUND_CHART_INFO boundaries not found')
-          old_branch = s[start:end]
           new_branch = r'''  if (tag === 'CRASH' && typeof fields.crashX === 'number') {
     const wasFlying = liveRoundState.phase === 'FLYING';
     if (fields.roundId != null && liveRoundState.roundId != null && fields.roundId !== liveRoundState.roundId) {
       pushRoundHistory(fields.crashX);
-      return; // different round: history only
+      return;
     }
     if (!wasFlying) {
       pushRoundHistory(fields.crashX);
       return;
     }
 
-    // IMPORTANT: do not wait for chart confirmation, screenshot, or CRASHED.
-    // The moment the WebSocket frame is classified, publish crashX separately
-    // while the flight remains visually FLYING.
+    // Zero-delay telemetry path: publish crashX immediately, while the
+    // aircraft remains FLYING. Screenshot capture is intentionally after
+    // publication and cannot delay this event.
     const signalAt = now();
     crashSignal = {
       phase: 'CRASH_SIGNAL',
@@ -74,24 +84,23 @@ jobs:
 '''
           s = s[:start] + new_branch + s[end:]
 
-          # Frontend: add a dedicated immediate SSE branch before the generic
-          # LIVE_TICK/CRASH_LIVE handling, so crashX cannot be lost in the
-          # normal flight update path.
+          # Expose crashSignal in status and reset it cleanly.
+          if 'crashSignal,' not in s:
+              needle = '    liveRoundState,\n'
+              if needle in s:
+                  s = s.replace(needle, needle + '    crashSignal,\n', 1)
+          reset_old = "  liveRoundState = { phase: 'UNKNOWN', multiplier: null, roundId: null, newStateId: null, timeLeft: null, updatedAt: null };\n"
+          if reset_old in s:
+              s = s.replace(reset_old, reset_old + "  crashSignal = { phase: 'WAITING', crashX: null, roundId: null, signalReceivedAt: null };\n", 1)
+
+          # Frontend: dedicated immediate SSE branch.
           if 'WTS_CRASH_SIGNAL_UI_LIVE_V2' not in f:
               needle = "    if (event.type === 'LIVE_TICK' || event.type === 'CRASH_LIVE' || event.type === 'STATE_LIVE') {"
-              inject = r'''    // WTS_CRASH_SIGNAL_UI_LIVE_V2: crashX is rendered immediately from SSE.
-    // Keep the aircraft in FLYING and keep the live multiplier unchanged.
+              inject = r'''    // WTS_CRASH_SIGNAL_UI_LIVE_V2: render the real crashX immediately.
     if (event.type === 'CRASH_SIGNAL_LIVE') {
       const d = event.data || {};
-      if (typeof window.__wtsEliteCrashSignal === 'function') {
-        window.__wtsEliteCrashSignal(d);
-      }
-      updateFlightAnimation({
-        phase: 'FLYING',
-        multiplier: d.multiplier,
-        roundId: d.roundId,
-        crashX: d.crashX
-      });
+      if (typeof window.__wtsEliteCrashSignal === 'function') window.__wtsEliteCrashSignal(d);
+      updateFlightAnimation({ phase: 'FLYING', multiplier: d.multiplier, roundId: d.roundId, crashX: d.crashX });
     }
 
 '''
@@ -99,64 +108,65 @@ jobs:
                   raise SystemExit('frontend event handler marker not found')
               f = f.replace(needle, inject + needle, 1)
 
-          # Add a self-contained visible CRASH X telemetry overlay. It does
-          # not depend on existing card IDs, so layout changes cannot hide it.
-          elite = Path('frontend/wts-elite-flight.js')
-          e = elite.read_text(encoding='utf-8') if elite.exists() else ''
-          if 'WTS_CRASH_SIGNAL_OVERLAY_V2' not in e:
-              overlay = r'''
+          # The server is the authoritative action gate. Do not grey-out a
+          # real manual button because the dashboard's cached DOM snapshot is
+          # one tick behind. The API validates readiness again immediately.
+          f = f.replace('btn.disabled = !b.ready;', 'btn.disabled = false; btn.classList.toggle(\'is-not-ready\', !b.ready);')
 
-// WTS_CRASH_SIGNAL_OVERLAY_V2
+          # Self-contained CRASH X overlay: spinner before the real value,
+          # instant value on CRASH_SIGNAL_LIVE, and no synthetic number.
+          if 'WTS_CRASH_SIGNAL_OVERLAY_V3' not in e:
+              e = e.rstrip() + r'''
+
+// WTS_CRASH_SIGNAL_OVERLAY_V3
 (() => {
   'use strict';
   const ID = 'wts-crash-signal-live-overlay';
-  const ensure = () => {
-    let el = document.getElementById(ID);
-    if (el) return el;
-    el = document.createElement('div');
-    el.id = ID;
-    el.innerHTML = '<span class="wts-cs-label">CRASH X</span><strong class="wts-cs-value">—</strong><span class="wts-cs-state">WAITING</span>';
-    el.style.cssText = 'position:fixed;right:18px;top:88px;z-index:2147483000;display:none;align-items:center;gap:10px;padding:10px 14px;border:1px solid rgba(255,23,79,.55);border-radius:12px;background:rgba(7,10,20,.94);box-shadow:0 0 24px rgba(255,23,79,.22);font:700 13px/1.1 Arial,sans-serif;letter-spacing:.04em;color:#fff;backdrop-filter:blur(8px)';
-    document.body.appendChild(el);
-    return el;
+  const cssId = 'wts-crash-signal-live-style';
+  function ensureStyle(){
+    if(document.getElementById(cssId))return;
+    const s=document.createElement('style');s.id=cssId;s.textContent=`
+      #${ID}{position:fixed;right:18px;top:88px;z-index:2147483000;display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid rgba(255,23,79,.42);border-radius:12px;background:rgba(7,10,20,.95);box-shadow:0 0 24px rgba(255,23,79,.18);font:800 12px/1 Arial,sans-serif;letter-spacing:.05em;color:#fff;backdrop-filter:blur(9px)}
+      #${ID} .wts-cs-label{color:#aab3c5}#${ID} .wts-cs-value{font-size:17px;color:#ff174f;min-width:48px;text-align:right}#${ID} .wts-cs-state{font-size:9px;color:#00e676}
+      #${ID}.waiting .wts-cs-value{color:#7e8799}.wts-cs-spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.18);border-top-color:#ff174f;border-radius:50%;animation:wtsCsSpin .65s linear infinite}@keyframes wtsCsSpin{to{transform:rotate(360deg)}}
+    `;document.head.appendChild(s);
+  }
+  function ensure(){
+    ensureStyle();let el=document.getElementById(ID);if(el)return el;
+    el=document.createElement('div');el.id=ID;el.className='waiting';el.innerHTML='<span class="wts-cs-label">CRASH X</span><strong class="wts-cs-value"><span class="wts-cs-spin"></span></strong><span class="wts-cs-state">WAITING WS</span>';document.body.appendChild(el);return el;
+  }
+  window.__wtsEliteCrashSignal = d => {
+    if(!d || typeof d.crashX !== 'number')return;
+    const el=ensure();el.classList.remove('waiting');
+    el.querySelector('.wts-cs-value').textContent=Number(d.crashX).toFixed(2)+'x';
+    el.querySelector('.wts-cs-state').textContent='FLYING • WS';
   };
-  window.__wtsEliteCrashSignal = (d) => {
-    if (!d || typeof d.crashX !== 'number') return;
-    const el = ensure();
-    const v = el.querySelector('.wts-cs-value');
-    const st = el.querySelector('.wts-cs-state');
-    v.textContent = Number(d.crashX).toFixed(2) + 'x';
-    st.textContent = 'FLYING • WS';
-    el.style.display = 'flex';
-  };
+  function boot(){ensure();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
 '''
-              e = e.rstrip() + overlay
-              elite.write_text(e, encoding='utf-8')
 
-          # Ensure the elite script is present in the page (idempotent).
+          # Ensure elite script is loaded once.
           tag = '<script src="wts-elite-flight.js"></script>'
           if 'wts-elite-flight.js' not in h:
               pos = h.lower().rfind('</body>')
-              if pos < 0:
-                  raise SystemExit('index closing body marker not found')
+              if pos < 0: raise SystemExit('index closing body marker not found')
               h = h[:pos] + '  ' + tag + '\n' + h[pos:]
 
           server.write_text(s, encoding='utf-8')
           frontend.write_text(f, encoding='utf-8')
+          elite.write_text(e, encoding='utf-8')
           index.write_text(h, encoding='utf-8')
 
-          # Remove the old one-shot workflow after successful application.
           oldwf = Path('.github/workflows/apply-crash-signal-update.yml')
-          if oldwf.exists():
-              oldwf.unlink()
+          if oldwf.exists(): oldwf.unlink()
 
           subprocess.run(['git','config','user.name','github-actions[bot]'], check=True)
           subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
           subprocess.run(['git','add','server/index.js','frontend/wts-login.js','frontend/wts-elite-flight.js','frontend/index.html','.github/workflows/apply-crash-signal-update.yml'], check=True)
           if subprocess.run(['git','diff','--cached','--quiet']).returncode == 0:
               print('No changes needed')
-              sys.exit(0)
-          subprocess.run(['git','commit','-m','fix: render crashX immediately from websocket'], check=True)
+              raise SystemExit(0)
+          subprocess.run(['git','commit','-m','fix: immediate crashX telemetry and real bet controls'], check=True)
           subprocess.run(['git','push'], check=True)
           PY

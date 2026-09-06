@@ -10,7 +10,12 @@
     gameDom: `${API_ORIGIN}/api/game-dom`,
     reset: `${API_ORIGIN}/api/reset`,
     events: `${API_ORIGIN}/api/events`,
-    manualBet: `${API_ORIGIN}/api/manual-bet`
+    manualBet: `${API_ORIGIN}/api/manual-bet`,
+    setBetAmount: `${API_ORIGIN}/api/set-bet-amount`,
+    refreshGame: `${API_ORIGIN}/api/refresh-game`,
+    gameMenu: `${API_ORIGIN}/api/game-menu`,
+    liveShot: `${API_ORIGIN}/api/live-shot`,
+    betStatsToday: `${API_ORIGIN}/api/bet-stats-today`
   };
 
   const form = document.getElementById('wts-login-form');
@@ -31,6 +36,7 @@
   let selectedGame = null;
   let gameSection = null;
   let statusTimer = null;
+  let liveShotTimer = null;
   let lastDomEventId = null;
   let lastGameDomEventId = null;
   let infoModal = null;
@@ -288,6 +294,7 @@
   }
 
   function leavePhase2ToGameChooser(message = 'Authentication remains active. Choose another game.') {
+    stopLiveShotPolling();
     phase2Page = false;
     stopEventStream();
     document.body.classList.remove('wts-phase2');
@@ -308,6 +315,23 @@
         try {
           const event = JSON.parse(e.data);
           if (event.type === 'STREAM_CONNECTED') { updateEventStreamBadge('LIVE'); return; }
+
+          // Zero-poll path: these three fire the instant the server reads
+          // the WebSocket frame itself — no waiting for the next status
+          // poll. Kept out of the event-history log since they can arrive
+          // ~10x/sec (LIVE_TICK) and would drown out real state changes.
+          if (event.type === 'LIVE_TICK' || event.type === 'CRASH_LIVE' || event.type === 'STATE_LIVE') {
+            const d = event.data || {};
+            if (event.type === 'LIVE_TICK') {
+              updateFlightAnimation({ phase: 'FLYING', multiplier: d.multiplier, roundId: d.roundId });
+            } else if (event.type === 'CRASH_LIVE') {
+              updateFlightAnimation({ phase: 'CRASHED', multiplier: d.multiplier, roundId: d.roundId });
+            } else if (event.type === 'STATE_LIVE' && d.newStateId != null) {
+              updateFlightAnimation({ phase: 'WAITING', multiplier: null, roundId: d.roundId });
+            }
+            return;
+          }
+
           phase2EventHistory.unshift(event);
           phase2EventHistory = phase2EventHistory.slice(0, 30);
           window.__wtsLastGameEvents = phase2EventHistory.slice(0, 8);
@@ -375,7 +399,25 @@
     const betCard = (slot, label) => {
       const b = bets[slot-1] || {};
       const meta = betActionMeta(b.state, label);
-      return `<div class="wts-p3-bet-card wts-p3-state-${meta.cls}"><div class="wts-p3-bet-head"><span>BET CONTROL ${label}</span><b class="${b.ready ? 'ready' : 'waiting'}">${b.ready ? 'READY' : 'WAITING'}</b></div><div class="wts-p3-bet-amount">${escapeHtml(b.amount || '1.00')} <small>TZS</small></div><button type="button" class="wts-p3-bet-button wts-p3-btn-${meta.cls}" data-bet-slot="${slot}" ${b.ready ? '' : 'disabled'}>${meta.text}</button><small class="wts-p3-bet-note">${meta.note}</small></div>`;
+      const amount = String(b.amount || '400.00').replace(/[^0-9.]/g,'') || '400.00';
+      return `<div class="wts-p3-bet-card wts-p3-state-${meta.cls}" data-bet-card="${slot}">
+        <div class="wts-p3-bet-head"><span>BET CONTROL ${label}</span><b class="${b.ready ? 'ready' : 'waiting'}">${b.ready ? 'READY' : 'WAITING'}</b></div>
+        <div class="wts-p3-amount-row">
+          <button type="button" class="wts-p3-step" data-amount-action="minus" data-bet-slot="${slot}" aria-label="Decrease amount ${label}">−</button>
+          <input class="wts-p3-amount-input" data-amount-input="${slot}" inputmode="decimal" value="${escapeHtml(amount)}" aria-label="Bet amount ${label}">
+          <button type="button" class="wts-p3-step" data-amount-action="plus" data-bet-slot="${slot}" aria-label="Increase amount ${label}">+</button>
+        </div>
+        <div class="wts-p3-amount-presets">
+          <button type="button" data-amount-preset="50" data-bet-slot="${slot}">50</button>
+          <button type="button" data-amount-preset="100" data-bet-slot="${slot}">100</button>
+          <button type="button" data-amount-preset="200" data-bet-slot="${slot}">200</button>
+          <button type="button" data-amount-preset="500" data-bet-slot="${slot}">500</button>
+          <button type="button" data-amount-preset="1000" data-bet-slot="${slot}">1K</button>
+          <button type="button" data-amount-preset="2000" data-bet-slot="${slot}">2K</button>
+        </div>
+        <button type="button" class="wts-p3-bet-button wts-p3-btn-${meta.cls}" data-bet-action data-bet-slot="${slot}" ${b.ready ? '' : 'disabled'}>${meta.text}</button>
+        <small class="wts-p3-bet-note">${meta.note} • Manual action only</small>
+      </div>`;
     };
     const common = !!g.COMMON?.visible;
     const iframe = !!g.IFRAME?.visible;
@@ -391,7 +433,20 @@
     root.innerHTML = `
       <div class="wts-p2-topbar">
         <div class="wts-p2-brand"><span class="wts-p2-brand-dot"></span><div><strong>WTS GAME CONTROL</strong><small>PHASE 3 • LIVE GAME CONTROL</small></div></div>
-        <div class="wts-p2-top-actions"><span class="wts-p2-session"><i></i> AUTH SESSION VERIFIED</span><button type="button" id="wts-p2-change">CHANGE GAME</button><button type="button" id="wts-p2-disconnect">DISCONNECT</button></div>
+        <div class="wts-p2-top-actions"><span class="wts-p2-session"><i></i> AUTH SESSION VERIFIED</span>
+          <div class="wts-nav-wrap">
+            <button type="button" id="wts-nav-toggle" class="wts-nav-btn" aria-haspopup="true" aria-expanded="false">☰ NAV MENU</button>
+            <div id="wts-nav-dropdown" class="wts-nav-dropdown" hidden>
+              <button type="button" data-nav-action="history">My Bet History</button>
+              <button type="button" data-nav-action="howto">How to Use</button>
+              <div class="wts-nav-row"><span>Music</span><label class="wts-switch"><input type="checkbox" id="wts-nav-music"><span class="wts-switch-track"></span></label></div>
+              <hr>
+              <button type="button" data-nav-action="refresh">↻ Refresh</button>
+              <button type="button" data-nav-action="change">Change Game</button>
+              <button type="button" data-nav-action="disconnect" class="wts-nav-danger">Disconnect</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="wts-p2-heading">
@@ -400,11 +455,30 @@
       </div>
 
       <div class="wts-p2-main-grid">
-        <section class="wts-p2-card wts-p2-live-card">
-          <div class="wts-p2-card-head"><div><span>LIVE GAME DATA</span><strong>${escapeHtml(valueLabel)}</strong></div><b class="wts-p2-source">DOM DETECTED</b></div>
+        <section class="wts-p2-card wts-p2-live-card" id="wts-p2-live-card">
+          <div class="wts-p2-card-head"><div><span>LIVE GAME DATA</span><strong>${escapeHtml(valueLabel)}</strong></div><b id="wts-p2-source" class="wts-p2-source">LIVE WS / DOM</b></div>
           <div class="wts-p2-value ${value === '—' ? 'is-empty' : ''}">${escapeHtml(value)}</div>
+          <div id="wts-flight" class="wts-flight">
+            <div class="wts-flight-label" id="wts-flight-label">WAITING</div>
+            <svg viewBox="0 0 400 180" preserveAspectRatio="none">
+              <path id="wts-flight-path" class="wts-flight-path" d="M 10 170 L 10 170" />
+              <g id="wts-flight-marker" class="wts-flight-marker" transform="translate(10,170)">
+                <circle r="6" fill="#4ade80" />
+              </g>
+            </svg>
+            <div class="wts-flight-value" id="wts-flight-value">—</div>
+          </div>
           <div class="wts-p2-round"><span>ROUND / ACTIVITY</span><strong id="wts-p2-round">${escapeHtml(round)}</strong></div>
           <div class="wts-p2-note">Values are displayed only when detected from the connected game DOM. No prediction or result generation is performed.</div>
+        </section>
+
+        <section class="wts-p2-card wts-today-card">
+          <div class="wts-p2-card-head"><div><span>TODAY</span><strong>Bet Summary</strong></div><button type="button" id="wts-today-refresh" class="wts-today-refresh">↻ Refresh</button></div>
+          <div class="wts-today-grid">
+            <div class="wts-today-tile"><span>Total Bet Today</span><strong id="wts-today-bet">—</strong></div>
+            <div class="wts-today-tile wts-today-win"><span>Total Win</span><strong id="wts-today-win">—</strong></div>
+            <div class="wts-today-tile wts-today-loss"><span>Total Loss</span><strong id="wts-today-loss">—</strong></div>
+          </div>
         </section>
 
         <section class="wts-p2-card">
@@ -421,6 +495,12 @@
       <section class="wts-p3-control-strip">
         <div class="wts-p3-balance-card"><span>LIVE BALANCE</span><strong id="wts-p3-balance">${escapeHtml(balance)}</strong><small>Read from connected BetPawa DOM</small></div>
         <div class="wts-p3-bets">${isAviator ? betCard(1,'2') + betCard(2,'3') : '<div class="wts-p3-unavailable">Manual bet controls are available for Aviator.</div>'}</div>
+      </section>
+
+
+      <section class="wts-p3-history-card">
+        <div class="wts-p3-menu-head"><div><span>ROUND HISTORY</span><strong>Recent results</strong></div><small>Latest 10 only</small></div>
+        <div id="wts-p3-history" class="wts-p3-history">${(Array.isArray(state.roundHistory) ? state.roundHistory : []).slice(0,25).map(x => `<span class="${historyColorClass(x)}">${escapeHtml(x)}</span>`).join('') || '<em>Waiting for rounds…</em>'}</div>
       </section>
 
       <div class="wts-p2-section-title"><div><span>DOM HEALTH</span><strong>Game structure monitor</strong></div><span class="wts-p2-health-state ${domReady ? 'ok' : 'warn'}"><i></i>${domReady ? 'PRIMARY DOM READY' : 'WAITING FOR PRIMARY DOM'}</span></div>
@@ -441,9 +521,15 @@
       </div>
     `;
 
-    document.getElementById('wts-p2-change')?.addEventListener('click', () => leavePhase2ToGameChooser());
-    document.getElementById('wts-p2-disconnect')?.addEventListener('click', () => void disconnectSession());
-    gameSection.querySelectorAll('[data-bet-slot]').forEach(btn => btn.addEventListener('click', () => void manualBet(Number(btn.dataset.betSlot), btn)));
+    setupNavMenu();
+    startLiveShotPolling();
+    gameSection.querySelectorAll('[data-bet-slot]').forEach(btn => {
+      if (btn.matches('[data-amount-action]')) btn.addEventListener('click', () => void changeAmount(Number(btn.dataset.betSlot), btn.dataset.amountAction));
+      else if (btn.matches('[data-amount-preset]')) btn.addEventListener('click', () => void setAmount(Number(btn.dataset.betSlot), btn.dataset.amountPreset));
+      else if (btn.matches('[data-bet-action]')) btn.addEventListener('click', () => void manualBet(Number(btn.dataset.betSlot), btn));
+    });
+    gameSection.querySelectorAll('[data-amount-input]').forEach(input => input.addEventListener('change', () => void setAmount(Number(input.dataset.amountInput), input.value)));
+
   }
 
   function updatePhase2Dashboard(domData, gameStateData) {
@@ -459,7 +545,14 @@
     const setText = (id, value) => { const el = document.getElementById(id); if (el) el.textContent = value; };
     setText('wts-p2-round', round);
     setText('wts-p3-balance', balance);
-    gameSection.querySelectorAll('[data-bet-slot]').forEach(btn => {
+    const sourceEl = document.getElementById('wts-p2-source');
+    if (sourceEl) sourceEl.textContent = gameStateData?.wsMultiplier ? 'WEBSOCKET LIVE' : 'DOM / WS WAITING';
+    const historyEl = document.getElementById('wts-p3-history');
+    if (historyEl) {
+      const history = Array.isArray(gameStateData?.roundHistory) ? gameStateData.roundHistory.slice(0,25) : [];
+      historyEl.innerHTML = history.length ? history.map(x => `<span class="${historyColorClass(x)}">${escapeHtml(x)}</span>`).join('') : '<em>Waiting for rounds…</em>';
+    }
+    gameSection.querySelectorAll('[data-bet-action][data-bet-slot]').forEach(btn => {
       const slot = Number(btn.dataset.betSlot);
       const label = slot === 1 ? '2' : '3';
       const b = bets[slot - 1] || {};
@@ -470,7 +563,15 @@
       const card = btn.closest('.wts-p3-bet-card');
       if (card) card.className = `wts-p3-bet-card wts-p3-state-${meta.cls}`;
     });
-    gameSection.querySelectorAll('.wts-p3-bet-card').forEach((card, i) => { const b = bets[i] || {}; const amount = card.querySelector('.wts-p3-bet-amount'); const status = card.querySelector('.wts-p3-bet-head b'); if (amount) amount.innerHTML = `${escapeHtml(b.amount || '1.00')} <small>TZS</small>`; if (status) { status.textContent = b.ready ? 'READY' : 'WAITING'; status.className = b.ready ? 'ready' : 'waiting'; }});
+    gameSection.querySelectorAll('.wts-p3-bet-card').forEach((card, i) => {
+      const b = bets[i] || {};
+      const status = card.querySelector('.wts-p3-bet-head b');
+      const input = card.querySelector('.wts-p3-amount-input');
+      // Only reflect the game's own confirmed amount when the person isn't
+      // actively editing that field right now — never fight their typing.
+      if (input && document.activeElement !== input && b.amount) input.value = String(b.amount).replace(/[^0-9.]/g, '');
+      if (status) { status.textContent = b.ready ? 'READY' : 'WAITING'; status.className = b.ready ? 'ready' : 'waiting'; }
+    });
     setText('wts-p2-frames', String(Array.isArray(domData?.frames) ? domData.frames.length : '—'));
     setText('wts-p2-mutation', String(domData?.mutationVersion ?? '—'));
     setText('wts-p2-checked', String(domData?.checkedAt || '—'));
@@ -498,6 +599,218 @@
     if (eventsPanel && events.length) {
       eventsPanel.innerHTML = events.slice(0,6).map(e => `<div class="wts-p2-event"><i></i><span>${escapeHtml(e.type === 'MISSING' ? `${e.group.replaceAll('_',' ')} missing` : e.type === 'RECOVERED' ? `${e.group.replaceAll('_',' ')} recovered` : e.message || e.type)}</span><time>${escapeHtml(e.time || 'LIVE')}</time></div>`).join('');
     }
+  }
+
+  const AMOUNT_STEP = 50;
+  function localAmount(slot) {
+    const input = gameSection?.querySelector(`[data-amount-input="${slot}"]`);
+    const n = Number(input?.value || 400);
+    return Number.isFinite(n) && n >= 1 ? n : 400;
+  }
+  async function setAmount(slot, raw) {
+    const n = Number(String(raw).replace(/,/g,''));
+    if (!Number.isFinite(n) || n < 1) { toast('Amount must be at least 1.00 TZS.', 'error'); return; }
+    const input = gameSection?.querySelector(`[data-amount-input="${slot}"]`);
+    if (input) input.value = n.toFixed(2);
+    try {
+      const r = await fetch(API.setBetAmount,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot,amount:n.toFixed(2)})});
+      const d = await r.json().catch(()=>({}));
+      if (!r.ok || !d.ok) throw new Error(d.message || 'Amount update failed.');
+      void refreshStatus();
+    } catch(e) { toast(`🔴 ${e.message || 'Amount update failed.'}`,'error'); }
+  }
+  function changeAmount(slot, dir) {
+    const current = localAmount(slot);
+    const next = dir === 'plus' ? current + AMOUNT_STEP : Math.max(1, current - AMOUNT_STEP);
+    void setAmount(slot, next);
+  }
+  // History of recent points this round, so the SVG path can be redrawn as
+  // a smooth climbing curve rather than jumping between single values.
+  let flightPoints = [];
+  let flightRoundId = null;
+
+  function updateFlightAnimation(lrs) {
+    const el = document.getElementById('wts-flight');
+    const label = document.getElementById('wts-flight-label');
+    const valueEl = document.getElementById('wts-flight-value');
+    const pathEl = document.getElementById('wts-flight-path');
+    const markerEl = document.getElementById('wts-flight-marker');
+    const card = document.getElementById('wts-p2-live-card');
+    if (!el || !lrs) return;
+
+    // Keep the big headline value (and its label) in lockstep with the
+    // animation — both driven from the same instant push, so nothing can
+    // visually drift out of sync with what's shown in the flight box.
+    const bigValueEl = document.querySelector('.wts-p2-value');
+    const bigLabelEl = document.querySelector('.wts-p2-live-card .wts-p2-card-head strong');
+    if (bigValueEl && typeof lrs.multiplier === 'number') { bigValueEl.textContent = lrs.multiplier.toFixed(2) + 'x'; bigValueEl.classList.remove('is-empty'); }
+    if (bigLabelEl) bigLabelEl.textContent = lrs.phase === 'CRASHED' ? 'CRASHED AT' : lrs.phase === 'FLYING' ? 'MULTIPLIER (LIVE)' : 'LIVE GAME DATA';
+
+    if (lrs.roundId != null && lrs.roundId !== flightRoundId) {
+      flightRoundId = lrs.roundId;
+      flightPoints = [];
+    }
+
+    el.classList.remove('is-flying', 'is-crashed');
+    card?.classList.remove('wts-phase-flying', 'wts-phase-crashed');
+
+    if (lrs.phase === 'FLYING' && typeof lrs.multiplier === 'number') {
+      el.classList.add('is-flying');
+      card?.classList.add('wts-phase-flying');
+      if (label) label.textContent = 'FLYING';
+      if (valueEl) valueEl.textContent = lrs.multiplier.toFixed(2) + 'x';
+
+      // Log scale for pacing — Aviator's own growth is exponential, so a
+      // log-mapped curve climbs at a visually similar rate to the real one.
+      const progress = Math.min(1, Math.log(lrs.multiplier) / Math.log(30));
+      flightPoints.push(progress);
+      if (flightPoints.length > 60) flightPoints.shift();
+
+      const w = 400, h = 180, padB = 14, padL = 10;
+      const pts = flightPoints.map((p, i) => {
+        const x = padL + (i / Math.max(1, flightPoints.length - 1)) * (w - padL - 30);
+        const y = (h - padB) - p * (h - padB - 20);
+        return [x, y];
+      });
+      if (pts.length) {
+        const d = 'M ' + pts.map(p => p.join(' ')).join(' L ');
+        if (pathEl) pathEl.setAttribute('d', d);
+        const [mx, my] = pts[pts.length - 1];
+        if (markerEl) markerEl.setAttribute('transform', `translate(${mx},${my})`);
+      }
+    } else if (lrs.phase === 'CRASHED' && typeof lrs.multiplier === 'number') {
+      el.classList.add('is-crashed');
+      card?.classList.add('wts-phase-crashed');
+      if (label) label.textContent = 'FLEW AWAY';
+      if (valueEl) valueEl.textContent = lrs.multiplier.toFixed(2) + 'x';
+    } else {
+      if (label) label.textContent = 'WAITING FOR NEXT ROUND';
+      if (valueEl) valueEl.textContent = '—';
+    }
+  }
+
+  let todayStatsTimer = null;
+  async function refreshTodayStats() {
+    const btn = document.getElementById('wts-today-refresh');
+    if (btn) { btn.disabled = true; }
+    try {
+      const r = await fetch(API.betStatsToday, { cache: 'no-store' });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) {
+        const betEl = document.getElementById('wts-today-bet');
+        const winEl = document.getElementById('wts-today-win');
+        const lossEl = document.getElementById('wts-today-loss');
+        if (betEl) betEl.textContent = fmtTZS(d.totalBet);
+        if (winEl) winEl.textContent = fmtTZS(d.totalWin);
+        if (lossEl) lossEl.textContent = fmtTZS(d.totalLoss);
+      }
+    } catch {}
+    finally { if (btn) btn.disabled = false; }
+  }
+  function fmtTZS(n) { return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TZS'; }
+  function startTodayStats() {
+    stopTodayStats();
+    refreshTodayStats();
+    todayStatsTimer = setInterval(refreshTodayStats, 60000);
+    document.getElementById('wts-today-refresh')?.addEventListener('click', refreshTodayStats);
+  }
+  function stopTodayStats() { if (todayStatsTimer) { clearInterval(todayStatsTimer); todayStatsTimer = null; } }
+
+  function startLiveShotPolling() { startTodayStats(); }
+  function stopLiveShotPolling() {
+    flightPoints = [];
+    flightRoundId = null;
+    stopTodayStats();
+  }
+
+  async function refreshGameNow() {
+    try { const r=await fetch(API.refreshGame,{method:'POST'}); const d=await r.json().catch(()=>({})); if(!r.ok||!d.ok) throw new Error(d.message||'Refresh failed.'); updatePhase2Dashboard(d.dom,d.state); toast('🟢 Game state refreshed.','success'); }
+    catch(e){ toast(`🔴 ${e.message||'Refresh failed.'}`,'error'); }
+  }
+
+  function setupNavMenu() {
+    const toggle = document.getElementById('wts-nav-toggle');
+    const dropdown = document.getElementById('wts-nav-dropdown');
+    const musicToggle = document.getElementById('wts-nav-music');
+    if (!toggle || !dropdown) return;
+
+    const closeMenu = () => { dropdown.hidden = true; toggle.setAttribute('aria-expanded', 'false'); };
+    const openMenu = () => { dropdown.hidden = false; toggle.setAttribute('aria-expanded', 'true'); };
+
+    toggle.addEventListener('click', (e) => { e.stopPropagation(); dropdown.hidden ? openMenu() : closeMenu(); });
+    document.addEventListener('click', (e) => { if (!dropdown.hidden && !dropdown.contains(e.target) && e.target !== toggle) closeMenu(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+
+    dropdown.querySelectorAll('[data-nav-action]').forEach(btn => btn.addEventListener('click', () => {
+      closeMenu();
+      const action = btn.dataset.navAction;
+      if (action === 'history') void openHistoryModal();
+      else if (action === 'howto') void openHowToModal();
+      else if (action === 'refresh') void refreshGameNow();
+      else if (action === 'change') leavePhase2ToGameChooser();
+      else if (action === 'disconnect') void disconnectSession();
+    }));
+
+    if (musicToggle) musicToggle.addEventListener('change', () => void gameMenuAction('music'));
+  }
+
+  async function gameMenuAction(action, button) {
+    if (button) button.disabled = true;
+    try {
+      const r = await fetch(API.gameMenu, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.message || 'Menu action failed.');
+      return d;
+    } catch (e) {
+      toast(`🔴 ${e.message || 'Menu action failed.'}`, 'error');
+      return null;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function ensureModalHost() {
+    let host = document.getElementById('wts-modal-host');
+    if (!host) { host = document.createElement('div'); host.id = 'wts-modal-host'; document.body.appendChild(host); }
+    return host;
+  }
+
+  function closeModal() { const host = document.getElementById('wts-modal-host'); if (host) host.innerHTML = ''; }
+
+  function openModalShell(title, bodyHtml, footerHtml) {
+    const host = ensureModalHost();
+    host.innerHTML = `<div class="wts-modal-overlay" data-modal-overlay>
+      <div class="wts-modal-box" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+        <div class="wts-modal-header"><span>${escapeHtml(title)}</span><button type="button" class="wts-modal-close" aria-label="Close">×</button></div>
+        <div class="wts-modal-body">${bodyHtml}</div>
+        ${footerHtml ? `<div class="wts-modal-footer">${footerHtml}</div>` : ''}
+      </div>
+    </div>`;
+    const overlay = host.querySelector('[data-modal-overlay]');
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+    host.querySelector('.wts-modal-close')?.addEventListener('click', closeModal);
+    document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', esc); } });
+  }
+
+  async function openHowToModal() {
+    openModalShell('How to play?', '<div class="wts-howto-loading">Loading…</div>');
+    const d = await gameMenuAction('howto');
+    const steps = d?.steps || [];
+    const body = steps.length
+      ? steps.map(s => `<div class="wts-howto-step"><div class="wts-howto-bullet">${escapeHtml(s.n)}</div><p>${escapeHtml(s.text)}</p></div>`).join('')
+      : '<p>Could not load instructions right now.</p>';
+    openModalShell('How to play?', body);
+  }
+
+  async function openHistoryModal() {
+    openModalShell('My bet history', '<div class="wts-history-loading">Opening your bet history…</div>');
+    const d = await gameMenuAction('history');
+    const items = d?.items || [];
+    const rows = items.length
+      ? items.map(it => `<div class="wts-history-row"><div class="wts-history-date">${escapeHtml(it.date || '')}</div><div class="wts-history-bet">${escapeHtml(it.amount || '')}</div><div class="wts-history-mult">${escapeHtml(it.multiplier || '')}</div><div class="wts-history-cashout">${escapeHtml(it.cashOut || '')}</div></div>`).join('')
+      : '<p class="wts-history-empty">No recent bets found — open My Bet History once on the game screen itself, then try again here.</p>';
+    const legend = items.length ? `<div class="wts-history-row wts-history-legend"><div>Date</div><div>Bet TZS</div><div>X</div><div>Cash out TZS</div></div>` : '';
+    openModalShell('My bet history', `${legend}${rows}`, items.length ? '<button type="button" class="wts-modal-loadmore" disabled>Load more</button>' : '');
   }
 
   async function manualBet(slot, button) {
@@ -589,7 +902,7 @@
         if (phase2Page && gameSection) {
           updatePhase2Dashboard(d.gameDomHealth, d.gameState || null);
           consumeGameDomEvents(d.gameDomEvents);
-          updatePhase2Dashboard(d.gameDomHealth, d.gameState || null);
+          updateFlightAnimation(d.liveRoundState || null);
         } else {
           const panel = document.getElementById('wts-game-monitor');
           if (panel) renderGameMonitor(panel, d.gameDomHealth);
@@ -606,6 +919,7 @@
 
   async function disconnectSession() {
     if (!confirm('Disconnect the current authenticated session and return to login?')) return;
+    stopLiveShotPolling();
     try {
       const r = await fetch(API.reset, { method: 'POST', cache: 'no-store' });
       const d = await r.json().catch(() => ({}));
@@ -667,6 +981,15 @@
     infoModal.querySelector('.wts-info-close')?.addEventListener('click', close);
     infoModal.querySelector('.wts-info-backdrop')?.addEventListener('click', close);
     document.addEventListener('keydown', function esc(e) { if (e.key === 'Escape') close(); }, { once: true });
+  }
+
+  function historyColorClass(label) {
+    const n = parseFloat(String(label).replace(/[^0-9.]/g, ''));
+    if (!Number.isFinite(n)) return 'hc-blue';
+    if (n >= 10) return 'hc-pink';
+    if (n >= 5) return 'hc-purple-big';
+    if (n >= 2) return 'hc-purple';
+    return 'hc-blue';
   }
 
   function escapeHtml(v) {
@@ -788,11 +1111,89 @@
       .wts-p3-balance-card,.wts-p3-bet-card{border:1px solid rgba(120,180,255,.16);background:rgba(10,19,38,.72);border-radius:20px;padding:22px;box-shadow:0 16px 45px rgba(0,0,0,.18)}
       .wts-p3-balance-card{display:flex;flex-direction:column;justify-content:center;min-height:170px}.wts-p3-balance-card>span,.wts-p3-bet-head>span{font-size:13px;font-weight:800;letter-spacing:.12em;opacity:.7}.wts-p3-balance-card strong{font-size:clamp(30px,4vw,52px);margin:8px 0}.wts-p3-balance-card small,.wts-p3-bet-note{font-size:13px;opacity:.62}
       .wts-p3-bets{display:grid;grid-template-columns:1fr 1fr;gap:18px}.wts-p3-bet-card{display:flex;flex-direction:column;gap:14px}.wts-p3-bet-head{display:flex;justify-content:space-between;align-items:center}.wts-p3-bet-head b{font-size:11px;padding:6px 9px;border-radius:999px}.wts-p3-bet-head b.ready{background:rgba(34,197,94,.14);color:#6ee7a0}.wts-p3-bet-head b.waiting{background:rgba(245,158,11,.12);color:#fbbf24}.wts-p3-bet-amount{font-size:28px;font-weight:800}.wts-p3-bet-amount small{font-size:14px;opacity:.65}.wts-p3-bet-button{width:100%;min-height:58px;border:0;border-radius:14px;background:linear-gradient(135deg,#1d8cff,#00c8ff);color:white;font-weight:900;font-size:16px;cursor:pointer}.wts-p3-bet-button:disabled{opacity:.38;cursor:not-allowed}.wts-p3-unavailable{padding:28px;border:1px dashed rgba(255,255,255,.14);border-radius:18px;opacity:.7}
-      .wts-p3-btn-bet{background:linear-gradient(135deg,#1d8cff,#00c8ff)}.wts-p3-btn-cancel{background:linear-gradient(135deg,#ef4444,#dc2626)}.wts-p3-btn-cashout{background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#1a1300}
+      .wts-p3-btn-bet{background:linear-gradient(135deg,#1d8cff,#00c8ff);box-shadow:0 8px 24px rgba(29,140,255,.28)}.wts-p3-btn-bet:not(:disabled){animation:wtsBetPulse 2.2s ease-in-out infinite}.wts-p3-btn-cancel{background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 8px 24px rgba(239,68,68,.25)}.wts-p3-btn-cashout{background:linear-gradient(135deg,#f59e0b,#fbbf24);color:#1a1300;box-shadow:0 8px 24px rgba(245,158,11,.3)}
+      @keyframes wtsBetPulse{0%,100%{box-shadow:0 8px 24px rgba(29,140,255,.28)}50%{box-shadow:0 8px 34px rgba(29,140,255,.55)}}
       .wts-p3-state-cancel{border-color:rgba(239,68,68,.28)}.wts-p3-state-cashout{border-color:rgba(245,158,11,.32)}
       @media(max-width:850px){.wts-p3-control-strip{grid-template-columns:1fr}.wts-p3-bets{grid-template-columns:1fr}}
       @media(max-width:700px){.wts-phase2-shell{padding:22px 16px!important}.wts-p2-topbar{gap:18px}.wts-p2-heading h1{font-size:46px!important}.wts-p2-heading p{font-size:16px!important}.wts-p2-health-grid{grid-template-columns:1fr!important}.wts-p2-card{padding:24px!important}.wts-p2-value{min-height:160px!important;font-size:72px!important}.wts-p2-top-actions{width:100%}.wts-p2-top-actions button{flex:1;min-width:0}.wts-p2-session{width:100%;justify-content:flex-start;padding:0}.wts-p2-event{grid-template-columns:10px 1fr;gap:10px}.wts-p2-event time{grid-column:2}}
       @media(max-width:430px){.wts-p2-heading h1{font-size:40px!important}.wts-p2-card{padding:20px!important}.wts-p2-top-actions{display:grid!important;grid-template-columns:1fr 1fr}.wts-p2-session{grid-column:1/-1}.wts-p2-top-actions button{width:100%}.wts-p2-value{font-size:60px!important}.wts-p2-round{gap:10px}}
+      .wts-p3-amount-row{display:grid;grid-template-columns:58px 1fr 58px;gap:8px;align-items:center}.wts-p3-step{height:58px;border:1px solid rgba(120,180,255,.2);border-radius:14px;background:rgba(255,255,255,.045);color:#fff;font-size:28px;font-weight:900;cursor:pointer}.wts-p3-amount-input{width:100%;height:58px;box-sizing:border-box;border:1px solid rgba(120,180,255,.2);border-radius:14px;background:rgba(0,0,0,.22);color:#fff;text-align:center;font-size:24px;font-weight:900;outline:none}.wts-p3-amount-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.wts-p3-amount-presets button,.wts-p3-menu-actions button{min-height:42px;border:1px solid rgba(120,180,255,.16);border-radius:11px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.02));color:#a9c5e8;font-weight:800;cursor:pointer;transition:.15s}.wts-p3-amount-presets button:hover{border-color:rgba(92,177,255,.6);background:rgba(92,177,255,.12);color:#fff;transform:translateY(-1px)}.wts-p3-amount-presets button:active{transform:translateY(0)}.wts-p3-menu-card,.wts-p3-history-card{border:1px solid rgba(120,180,255,.14);background:rgba(10,19,38,.65);border-radius:20px;padding:20px;margin:18px 0}.wts-p3-menu-head{display:flex;align-items:center;justify-content:space-between;gap:18px}.wts-p3-menu-head>div:first-child{display:flex;flex-direction:column;gap:6px}.wts-p3-menu-head span{font-size:12px;letter-spacing:.12em;opacity:.65}.wts-p3-menu-head strong{font-size:22px}.wts-p3-menu-head small{opacity:.55}.wts-p3-menu-actions{display:flex;gap:8px;flex-wrap:wrap}.wts-p3-menu-actions button{padding:10px 14px}.wts-p3-history{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;max-height:130px;overflow-y:auto}.wts-p3-history span{padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.045);font-weight:900;font-size:14px}.wts-p3-history em{opacity:.55}.wts-p3-bet-button.wts-p3-btn-cashout{font-size:18px;min-height:64px}.wts-p3-bet-button.wts-p3-btn-cancel{min-height:64px}.wts-p3-bet-card[data-bet-card]{min-width:0}
+      @media(max-width:700px){.wts-p3-menu-head{align-items:flex-start;flex-direction:column}.wts-p3-menu-actions{width:100%;display:grid;grid-template-columns:1fr}.wts-p3-menu-actions button{width:100%}.wts-p3-amount-row{grid-template-columns:52px 1fr 52px}}
+
+      /* NAV MENU */
+      .wts-nav-wrap{position:relative}
+      .wts-nav-btn{height:48px;padding:0 18px;border-radius:12px;border:1px solid rgba(151,180,230,.2);background:rgba(255,255,255,.045);color:#dbe6f5;font-size:14px;font-weight:850;cursor:pointer}
+      .wts-nav-btn:hover{border-color:rgba(92,177,255,.55);background:rgba(92,177,255,.08)}
+      .wts-nav-dropdown{position:absolute;top:56px;right:0;z-index:40;min-width:230px;background:#0c1226;border:1px solid rgba(120,180,255,.22);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.5);padding:8px;display:flex;flex-direction:column;gap:2px}
+      .wts-nav-dropdown button{all:unset;box-sizing:border-box;width:100%;padding:11px 12px;border-radius:9px;color:#dbe6f5;font-size:14px;font-weight:700;cursor:pointer}
+      .wts-nav-dropdown button:hover{background:rgba(92,177,255,.12)}
+      .wts-nav-dropdown .wts-nav-danger{color:#ff9b9b}
+      .wts-nav-dropdown .wts-nav-danger:hover{background:rgba(255,110,110,.12)}
+      .wts-nav-dropdown hr{border:0;border-top:1px solid rgba(255,255,255,.08);margin:6px 4px}
+      .wts-nav-row{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;color:#dbe6f5;font-size:14px;font-weight:700}
+      .wts-switch{position:relative;display:inline-block;width:40px;height:22px}
+      .wts-switch input{opacity:0;width:0;height:0}
+      .wts-switch-track{position:absolute;inset:0;background:rgba(255,255,255,.18);border-radius:999px;transition:.15s}
+      .wts-switch-track::before{content:"";position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
+      .wts-switch input:checked + .wts-switch-track{background:#22c55e}
+      .wts-switch input:checked + .wts-switch-track::before{transform:translateX(18px)}
+
+      /* MODALS */
+      .wts-modal-overlay{position:fixed;inset:0;background:rgba(4,7,15,.72);display:flex;align-items:center;justify-content:center;z-index:200;padding:20px}
+      .wts-modal-box{width:min(560px,100%);max-height:82vh;overflow:auto;background:#0c1226;border:1px solid rgba(120,180,255,.22);border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+      .wts-modal-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid rgba(255,255,255,.08);position:sticky;top:0;background:#0c1226}
+      .wts-modal-header span{font-weight:900;letter-spacing:.06em;text-transform:uppercase;font-size:14px;color:#dbe6f5}
+      .wts-modal-close{all:unset;cursor:pointer;font-size:22px;line-height:1;color:#9aa8c7;padding:2px 8px;border-radius:8px}
+      .wts-modal-close:hover{background:rgba(255,255,255,.08);color:#fff}
+      .wts-modal-body{padding:18px 20px}
+      .wts-modal-footer{padding:12px 20px 18px;text-align:center}
+      .wts-modal-loadmore{padding:9px 18px;border-radius:10px;border:1px solid rgba(120,180,255,.2);background:rgba(255,255,255,.04);color:#a9c5e8;font-weight:800}
+      .wts-howto-step{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.06)}
+      .wts-howto-step:last-child{border-bottom:0}
+      .wts-howto-bullet{flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:rgba(92,177,255,.14);color:#7fc4ff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px}
+      .wts-howto-step p{margin:0;color:#dbe6f5;font-size:14px;line-height:1.5}
+      .wts-history-row{display:grid;grid-template-columns:1.1fr 1fr .8fr 1fr;gap:8px;padding:10px 4px;border-bottom:1px solid rgba(255,255,255,.06);font-size:13px;color:#dbe6f5}
+      .wts-history-legend{color:#8a97b8;font-weight:800;text-transform:uppercase;font-size:11px;letter-spacing:.05em}
+      .wts-history-empty{color:#9aa8c7;font-size:14px;line-height:1.5}
+      @media(max-width:480px){.wts-history-row{font-size:11px;grid-template-columns:1fr 1fr .7fr 1fr}}
+
+      .wts-p3-canvas-box{position:relative;margin:14px 0;border-radius:14px;overflow:hidden;border:1px solid rgba(120,180,255,.16);background:#05070a;min-height:120px;display:flex;align-items:center;justify-content:center}
+      .wts-p3-canvas-box img{width:100%;display:block}
+      #wts-p2-canvas-loading{color:#5b6461;font-size:13px;padding:24px}
+
+      /* Round-result color tiers — matches BetPawa's own convention */
+      .hc-blue{color:#5cb1ff!important;background:rgba(92,177,255,.12)!important}
+      .hc-purple{color:#a06bff!important;background:rgba(160,107,255,.12)!important}
+      .hc-purple-big{color:#c084fc!important;background:rgba(192,132,252,.16)!important;box-shadow:0 0 0 1px rgba(192,132,252,.3) inset}
+      .hc-pink{color:#ff5fd1!important;background:rgba(255,95,209,.16)!important;box-shadow:0 0 0 1px rgba(255,95,209,.35) inset}
+
+      /* Live card reacts to round phase, same convention as the sniffer page */
+      .wts-p2-live-card.wts-phase-flying{border-color:rgba(74,222,128,.4);background:linear-gradient(180deg,rgba(20,60,35,.35),rgba(10,19,38,.65))}
+      .wts-p2-live-card.wts-phase-crashed{border-color:rgba(255,90,90,.5);background:linear-gradient(180deg,rgba(70,15,15,.4),rgba(10,19,38,.65))}
+
+      /* Custom flight animation (original design, not a copy of any game's art) */
+      .wts-flight{position:relative;width:100%;height:180px;border-radius:14px;overflow:hidden;background:#05070a;transition:background .3s}
+      .wts-flight.is-flying{background:radial-gradient(circle at 30% 100%,rgba(74,222,128,.16),transparent 60%),#05070a}
+      .wts-flight.is-crashed{background:radial-gradient(circle at 60% 40%,rgba(255,90,90,.28),transparent 65%),#05070a}
+      .wts-flight svg{width:100%;height:100%;display:block}
+      .wts-flight-path{fill:none;stroke:#4ade80;stroke-width:3;stroke-linecap:round;transition:stroke .2s}
+      .wts-flight.is-crashed .wts-flight-path{stroke:#ff5a5a}
+      .wts-flight-marker{transition:transform .12s linear}
+      .wts-flight-label{position:absolute;top:10px;left:14px;font-size:13px;font-weight:800;letter-spacing:.05em;color:#8aa;text-transform:uppercase}
+      .wts-flight.is-flying .wts-flight-label{color:#4ade80}
+      .wts-flight.is-crashed .wts-flight-label{color:#ff8a8a}
+      .wts-flight-value{position:absolute;bottom:10px;right:16px;font-size:30px;font-weight:900;color:#fff}
+
+      .wts-today-card .wts-p2-card-head{margin-bottom:12px}
+      .wts-today-refresh{all:unset;cursor:pointer;font-size:12px;font-weight:800;color:#7cc4ff;padding:6px 10px;border-radius:8px;border:1px solid rgba(120,180,255,.2)}
+      .wts-today-refresh:hover{background:rgba(92,177,255,.1)}
+      .wts-today-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+      .wts-today-tile{background:rgba(255,255,255,.035);border:1px solid rgba(120,180,255,.12);border-radius:12px;padding:12px;text-align:center}
+      .wts-today-tile span{display:block;font-size:11px;color:#8a97b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+      .wts-today-tile strong{font-size:16px;color:#dbe6f5}
+      .wts-today-win strong{color:#4ade80}
+      .wts-today-loss strong{color:#ff6a6a}
+      @media(max-width:480px){.wts-today-grid{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
   }

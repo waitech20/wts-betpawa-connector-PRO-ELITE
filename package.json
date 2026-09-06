@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "commonjs",
   "scripts": {
-    "start": "node server/runtime-patch.js"
+    "start": "node server/index.js"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.1.3",

@@ -20,113 +20,1131 @@
     :root {
       --green: #9ce800;
       --green-light: #b9ff19;
+
       --bg-1: #070a0c;
       --bg-2: #101417;
       --bg-3: #171d20;
+
       --card: rgba(25, 30, 33, .96);
       --input: #111619;
+
       --white: #ffffff;
       --text: #e9edef;
       --muted: #8e989d;
+
       --border: rgba(255,255,255,.08);
       --green-border: rgba(156,232,0,.20);
+
       --error: #ff5c5c;
     }
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { width:100%; height:100%; min-height:100%; margin:0; padding:0; overflow:hidden; }
-    body {
-      position:relative; display:flex; align-items:center; justify-content:center; padding:18px;
-      font-family:Inter,"Segoe UI",Roboto,Arial,sans-serif; color:var(--white);
-      background:radial-gradient(circle at 50% 0%,rgba(156,232,0,.10) 0%,transparent 32%),radial-gradient(circle at 100% 100%,rgba(45,110,60,.08) 0%,transparent 35%),linear-gradient(145deg,var(--bg-1) 0%,var(--bg-2) 48%,var(--bg-3) 100%);
+
+    /* =========================
+       GLOBAL
+    ========================= */
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
     }
-    body::before { content:""; position:fixed; width:420px; height:420px; left:50%; top:50%; transform:translate(-50%,-50%); background:radial-gradient(circle,rgba(156,232,0,.055),transparent 68%); pointer-events:none; }
-    .wts-login-card { position:relative; width:min(100%,420px); padding:32px 30px 28px; background:linear-gradient(145deg,rgba(31,37,40,.98),rgba(20,25,28,.98)); border:1px solid var(--green-border); border-radius:22px; box-shadow:0 25px 70px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.035); overflow:hidden; }
-    .wts-login-card::before { content:""; position:absolute; left:12%; right:12%; top:0; height:2px; background:linear-gradient(90deg,transparent,var(--green),transparent); opacity:.9; }
-    .wts-login-content { position:relative; z-index:2; }
-    .wts-login-brand { text-align:center; margin-bottom:27px; }
-    .wts-login-brand-name { display:inline-flex; align-items:center; justify-content:center; font-size:25px; line-height:1; font-weight:800; letter-spacing:-.7px; color:var(--white); }
-    .wts-login-brand-name::after { content:""; width:7px; height:7px; margin-left:5px; margin-top:15px; border-radius:50%; background:var(--green); box-shadow:0 0 12px rgba(156,232,0,.6); }
-    .wts-login-heading { text-align:center; margin-bottom:27px; }
-    .wts-login-heading h1 { margin:0; font-size:27px; line-height:1.2; font-weight:750; letter-spacing:-.6px; color:var(--white); }
-    .wts-login-heading p { margin:8px 0 0; color:var(--muted); font-size:13.5px; line-height:1.45; }
-    .wts-login-form-group { margin-bottom:19px; }
-    .wts-login-form-label { display:block; margin-bottom:8px; color:#e8ebec; font-size:13px; font-weight:650; }
-    .wts-login-phone-wrapper { display:flex; width:100%; height:54px; background:var(--input); border:1px solid var(--border); border-radius:12px; overflow:hidden; transition:border-color .2s ease,box-shadow .2s ease,background .2s ease; }
-    .wts-login-phone-wrapper:focus-within { border-color:var(--green); background:#13191b; box-shadow:0 0 0 3px rgba(156,232,0,.09); }
-    .wts-login-country-code { flex:0 0 82px; display:flex; align-items:center; justify-content:center; gap:7px; border-right:1px solid rgba(255,255,255,.07); color:var(--green); font-size:14px; font-weight:750; user-select:none; }
-    .wts-login-tz-flag { width:24px; height:17px; display:block; border-radius:2px; overflow:hidden; flex-shrink:0; box-shadow:0 0 0 1px rgba(255,255,255,.12); }
-    .wts-login-phone-input { flex:1; min-width:0; height:100%; padding:0 15px; border:0; outline:0; background:transparent; color:var(--white); font-size:16px; font-weight:500; letter-spacing:.35px; }
-    .wts-login-phone-input::placeholder { color:#606a6f; font-weight:400; letter-spacing:0; }
-    .wts-login-helper { display:flex; align-items:flex-start; gap:6px; margin-top:7px; color:#747e83; font-size:10.5px; line-height:1.4; }
-    .wts-login-helper i { flex-shrink:0; margin-top:2px; color:var(--green); font-size:9px; }
-    .wts-login-password-wrapper { position:relative; width:100%; height:54px; background:var(--input); border:1px solid var(--border); border-radius:12px; transition:border-color .2s ease,box-shadow .2s ease,background .2s ease; }
-    .wts-login-password-wrapper:focus-within { border-color:var(--green); background:#13191b; box-shadow:0 0 0 3px rgba(156,232,0,.09); }
-    .wts-login-password-input { width:100%; height:100%; padding:0 70px 0 15px; border:0; outline:0; background:transparent; color:var(--white); font-size:16px; }
-    .wts-login-password-input::placeholder { color:#606a6f; }
-    .wts-login-show-password { position:absolute; top:50%; right:9px; transform:translateY(-50%); height:35px; display:flex; align-items:center; justify-content:center; gap:5px; padding:0 9px; border:0; border-radius:8px; background:transparent; color:#8b9498; font-size:12px; font-weight:650; cursor:pointer; }
-    .wts-login-show-password:hover { color:var(--green); background:rgba(156,232,0,.06); }
-    .wts-login-show-password:focus-visible { outline:2px solid var(--green); outline-offset:2px; }
-    .wts-login-show-password i { font-size:13px; }
-    .wts-login-options { display:flex; align-items:center; justify-content:flex-start; gap:12px; margin:4px 0 23px; }
-    .wts-login-remember { display:flex; align-items:center; gap:8px; color:#aab1b4; font-size:12.5px; cursor:pointer; user-select:none; }
-    .wts-login-remember input { position:absolute; opacity:0; pointer-events:none; }
-    .wts-login-custom-checkbox { position:relative; width:18px; height:18px; flex-shrink:0; border:1px solid #4d565b; border-radius:5px; background:#111517; transition:.2s ease; }
-    .wts-login-remember input:checked + .wts-login-custom-checkbox { background:var(--green); border-color:var(--green); }
-    .wts-login-remember input:checked + .wts-login-custom-checkbox::after { content:""; position:absolute; width:5px; height:9px; left:5px; top:2px; border:solid #111517; border-width:0 2px 2px 0; transform:rotate(45deg); }
-    .wts-login-button { position:relative; width:100%; height:54px; display:flex; align-items:center; justify-content:center; gap:9px; border:0; border-radius:12px; background:linear-gradient(135deg,var(--green),var(--green-light)); color:#121719; font-size:16px; font-weight:800; cursor:pointer; box-shadow:0 10px 28px rgba(156,232,0,.15); transition:transform .2s ease,box-shadow .2s ease,opacity .2s ease; }
-    .wts-login-button:hover:not(:disabled) { transform:translateY(-2px); box-shadow:0 14px 34px rgba(156,232,0,.23); }
-    .wts-login-button:active:not(:disabled) { transform:translateY(0); }
-    .wts-login-button:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
-    .wts-login-button i { font-size:14px; }
-    .wts-login-status { min-height:18px; margin-top:10px; text-align:center; font-size:11px; line-height:1.4; color:var(--muted); }
-    .wts-login-status.error { color:var(--error); }
-    .wts-login-status.success { color:var(--green); }
-    .wts-login-secure { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:20px; padding-top:16px; border-top:1px solid rgba(255,255,255,.055); color:#5f686d; font-size:9.5px; }
-    .wts-login-secure i { color:var(--green); font-size:10px; }
-    @media (max-width:480px) { body{padding:12px}.wts-login-card{width:100%;padding:27px 20px 22px;border-radius:20px}.wts-login-brand{margin-bottom:23px}.wts-login-brand-name{font-size:23px}.wts-login-heading{margin-bottom:23px}.wts-login-heading h1{font-size:24px}.wts-login-heading p{font-size:12.5px}.wts-login-form-group{margin-bottom:17px}.wts-login-phone-wrapper,.wts-login-password-wrapper,.wts-login-button{height:52px}.wts-login-options{margin-bottom:20px}.wts-login-secure{margin-top:18px;padding-top:14px} }
-    @media (max-height:650px) { .wts-login-card{padding-top:21px;padding-bottom:18px}.wts-login-brand{margin-bottom:17px}.wts-login-heading{margin-bottom:18px}.wts-login-form-group{margin-bottom:13px}.wts-login-helper{margin-top:5px}.wts-login-options{margin-bottom:16px}.wts-login-secure{margin-top:14px;padding-top:11px} }
-    @media (max-width:350px) { .wts-login-card{padding-left:15px;padding-right:15px}.wts-login-country-code{flex-basis:76px}.wts-login-remember{font-size:11px} }
-    .wts-login-button.is-active { opacity:1; cursor:pointer; background:linear-gradient(135deg,var(--green),var(--green-light)); color:#121719; box-shadow:0 10px 28px rgba(156,232,0,.15); }
-    .wts-login-button:not(.is-active) { opacity:.45; cursor:not-allowed; box-shadow:none; }
-    html,body{min-height:100%} body{padding:10px}.wts-login-card{width:min(100%,410px);max-height:calc(100vh - 20px);overflow-y:auto;scrollbar-width:none;padding:22px 22px 18px}.wts-login-card::-webkit-scrollbar{display:none}.wts-login-brand{margin-bottom:17px}.wts-login-brand-name{font-size:22px}.wts-login-heading{margin-bottom:17px}.wts-login-heading h1{font-size:23px}.wts-login-heading p{margin-top:5px;font-size:12px}.wts-login-form-group{margin-bottom:13px}.wts-login-form-label{margin-bottom:6px;font-size:12px}.wts-login-phone-wrapper,.wts-login-password-wrapper{height:48px}.wts-login-helper{margin-top:4px;font-size:9.5px}.wts-login-options{margin:2px 0 13px}.wts-login-remember{font-size:11px}.wts-login-button{height:48px;font-size:14px}.wts-login-secure{margin-top:12px;padding-top:10px;font-size:8.5px}
-    @media (max-height:700px){.wts-login-card{padding-top:17px;padding-bottom:14px}.wts-login-brand{margin-bottom:13px}.wts-login-heading{margin-bottom:13px}.wts-login-form-group{margin-bottom:10px}.wts-login-phone-wrapper,.wts-login-password-wrapper,.wts-login-button{height:44px}.wts-login-secure{margin-top:9px;padding-top:8px}}
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    body {
+      position: relative;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      padding: 18px;
+
+      font-family:
+        Inter,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
+
+      color: var(--white);
+
+      background:
+        radial-gradient(
+          circle at 50% 0%,
+          rgba(156, 232, 0, .10) 0%,
+          transparent 32%
+        ),
+        radial-gradient(
+          circle at 100% 100%,
+          rgba(45, 110, 60, .08) 0%,
+          transparent 35%
+        ),
+        linear-gradient(
+          145deg,
+          var(--bg-1) 0%,
+          var(--bg-2) 48%,
+          var(--bg-3) 100%
+        );
+    }
+
+    body::before {
+      content: "";
+
+      position: fixed;
+
+      width: 420px;
+      height: 420px;
+
+      left: 50%;
+      top: 50%;
+
+      transform: translate(-50%, -50%);
+
+      background:
+        radial-gradient(
+          circle,
+          rgba(156,232,0,.055),
+          transparent 68%
+        );
+
+      pointer-events: none;
+    }
+
+    /* =========================
+       LOGIN CARD
+    ========================= */
+
+    .wts-login-card {
+      position: relative;
+
+      width: min(100%, 420px);
+
+      padding: 32px 30px 28px;
+
+      background:
+        linear-gradient(
+          145deg,
+          rgba(31,37,40,.98),
+          rgba(20,25,28,.98)
+        );
+
+      border: 1px solid var(--green-border);
+      border-radius: 22px;
+
+      box-shadow:
+        0 25px 70px rgba(0,0,0,.62),
+        inset 0 1px 0 rgba(255,255,255,.035);
+
+      overflow: hidden;
+    }
+
+    .wts-login-card::before {
+      content: "";
+
+      position: absolute;
+
+      left: 12%;
+      right: 12%;
+      top: 0;
+
+      height: 2px;
+
+      background:
+        linear-gradient(
+          90deg,
+          transparent,
+          var(--green),
+          transparent
+        );
+
+      opacity: .9;
+    }
+
+    .wts-login-content {
+      position: relative;
+      z-index: 2;
+    }
+
+    /* =========================
+       BRAND
+    ========================= */
+
+    .wts-login-brand {
+      text-align: center;
+      margin-bottom: 27px;
+    }
+
+    .wts-login-brand-name {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+
+      font-size: 25px;
+      line-height: 1;
+
+      font-weight: 800;
+      letter-spacing: -.7px;
+
+      color: var(--white);
+    }
+
+    .wts-login-brand-name::after {
+      content: "";
+
+      width: 7px;
+      height: 7px;
+
+      margin-left: 5px;
+      margin-top: 15px;
+
+      border-radius: 50%;
+
+      background: var(--green);
+
+      box-shadow:
+        0 0 12px rgba(156,232,0,.6);
+    }
+
+    /* =========================
+       HEADING
+    ========================= */
+
+    .wts-login-heading {
+      text-align: center;
+      margin-bottom: 27px;
+    }
+
+    .wts-login-heading h1 {
+      margin: 0;
+
+      font-size: 27px;
+      line-height: 1.2;
+
+      font-weight: 750;
+      letter-spacing: -.6px;
+
+      color: var(--white);
+    }
+
+    .wts-login-heading p {
+      margin: 8px 0 0;
+
+      color: var(--muted);
+
+      font-size: 13.5px;
+      line-height: 1.45;
+    }
+
+    /* =========================
+       FORM
+    ========================= */
+
+    .wts-login-form-group {
+      margin-bottom: 19px;
+    }
+
+    .wts-login-form-label {
+      display: block;
+
+      margin-bottom: 8px;
+
+      color: #e8ebec;
+
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    /* =========================
+       PHONE
+    ========================= */
+
+    .wts-login-phone-wrapper {
+      display: flex;
+
+      width: 100%;
+      height: 54px;
+
+      background: var(--input);
+
+      border: 1px solid var(--border);
+      border-radius: 12px;
+
+      overflow: hidden;
+
+      transition:
+        border-color .2s ease,
+        box-shadow .2s ease,
+        background .2s ease;
+    }
+
+    .wts-login-phone-wrapper:focus-within {
+      border-color: var(--green);
+
+      background: #13191b;
+
+      box-shadow:
+        0 0 0 3px rgba(156,232,0,.09);
+    }
+
+    /* =========================
+       COUNTRY CODE
+    ========================= */
+
+    .wts-login-country-code {
+      flex: 0 0 82px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      gap: 7px;
+
+      border-right:
+        1px solid rgba(255,255,255,.07);
+
+      color: var(--green);
+
+      font-size: 14px;
+      font-weight: 750;
+
+      user-select: none;
+    }
+
+    /* =========================
+       TANZANIA FLAG
+    ========================= */
+
+    .wts-login-tz-flag {
+      width: 24px;
+      height: 17px;
+
+      display: block;
+
+      border-radius: 2px;
+
+      overflow: hidden;
+
+      flex-shrink: 0;
+
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,.12);
+    }
+
+    /* =========================
+       PHONE INPUT
+    ========================= */
+
+    .wts-login-phone-input {
+      flex: 1;
+
+      min-width: 0;
+
+      height: 100%;
+
+      padding: 0 15px;
+
+      border: 0;
+      outline: 0;
+
+      background: transparent;
+
+      color: var(--white);
+
+      font-size: 16px;
+      font-weight: 500;
+
+      letter-spacing: .35px;
+    }
+
+    .wts-login-phone-input::placeholder {
+      color: #606a6f;
+
+      font-weight: 400;
+
+      letter-spacing: 0;
+    }
+
+    /* =========================
+       HELPER
+    ========================= */
+
+    .wts-login-helper {
+      display: flex;
+      align-items: flex-start;
+
+      gap: 6px;
+
+      margin-top: 7px;
+
+      color: #747e83;
+
+      font-size: 10.5px;
+      line-height: 1.4;
+    }
+
+    .wts-login-helper i {
+      flex-shrink: 0;
+
+      margin-top: 2px;
+
+      color: var(--green);
+
+      font-size: 9px;
+    }
+
+    /* =========================
+       PASSWORD
+    ========================= */
+
+    .wts-login-password-wrapper {
+      position: relative;
+
+      width: 100%;
+      height: 54px;
+
+      background: var(--input);
+
+      border: 1px solid var(--border);
+      border-radius: 12px;
+
+      transition:
+        border-color .2s ease,
+        box-shadow .2s ease,
+        background .2s ease;
+    }
+
+    .wts-login-password-wrapper:focus-within {
+      border-color: var(--green);
+
+      background: #13191b;
+
+      box-shadow:
+        0 0 0 3px rgba(156,232,0,.09);
+    }
+
+    .wts-login-password-input {
+      width: 100%;
+      height: 100%;
+
+      padding:
+        0
+        70px
+        0
+        15px;
+
+      border: 0;
+      outline: 0;
+
+      background: transparent;
+
+      color: var(--white);
+
+      font-size: 16px;
+    }
+
+    .wts-login-password-input::placeholder {
+      color: #606a6f;
+    }
+
+    /* =========================
+       SHOW PASSWORD
+    ========================= */
+
+    .wts-login-show-password {
+      position: absolute;
+
+      top: 50%;
+      right: 9px;
+
+      transform: translateY(-50%);
+
+      height: 35px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      gap: 5px;
+
+      padding: 0 9px;
+
+      border: 0;
+      border-radius: 8px;
+
+      background: transparent;
+
+      color: #8b9498;
+
+      font-size: 12px;
+      font-weight: 650;
+
+      cursor: pointer;
+    }
+
+    .wts-login-show-password:hover {
+      color: var(--green);
+
+      background:
+        rgba(156,232,0,.06);
+    }
+
+    .wts-login-show-password:focus-visible {
+      outline:
+        2px solid var(--green);
+
+      outline-offset: 2px;
+    }
+
+    .wts-login-show-password i {
+      font-size: 13px;
+    }
+
+    /* =========================
+       OPTIONS
+    ========================= */
+
+    .wts-login-options {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+
+      gap: 12px;
+
+      margin:
+        4px
+        0
+        23px;
+    }
+
+    .wts-login-remember {
+      display: flex;
+      align-items: center;
+
+      gap: 8px;
+
+      color: #aab1b4;
+
+      font-size: 12.5px;
+
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .wts-login-remember input {
+      position: absolute;
+
+      opacity: 0;
+
+      pointer-events: none;
+    }
+
+    .wts-login-custom-checkbox {
+      position: relative;
+
+      width: 18px;
+      height: 18px;
+
+      flex-shrink: 0;
+
+      border:
+        1px solid #4d565b;
+
+      border-radius: 5px;
+
+      background: #111517;
+
+      transition: .2s ease;
+    }
+
+    .wts-login-remember input:checked
+      + .wts-login-custom-checkbox {
+      background: var(--green);
+
+      border-color: var(--green);
+    }
+
+    .wts-login-remember input:checked
+      + .wts-login-custom-checkbox::after {
+      content: "";
+
+      position: absolute;
+
+      width: 5px;
+      height: 9px;
+
+      left: 5px;
+      top: 2px;
+
+      border:
+        solid #111517;
+
+      border-width:
+        0
+        2px
+        2px
+        0;
+
+      transform: rotate(45deg);
+    }
+
+    /* =========================
+       LOGIN BUTTON
+    ========================= */
+
+    .wts-login-button {
+      position: relative;
+
+      width: 100%;
+      height: 54px;
+
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      gap: 9px;
+
+      border: 0;
+      border-radius: 12px;
+
+      background:
+        linear-gradient(
+          135deg,
+          var(--green),
+          var(--green-light)
+        );
+
+      color: #121719;
+
+      font-size: 16px;
+      font-weight: 800;
+
+      cursor: pointer;
+
+      box-shadow:
+        0 10px 28px
+        rgba(156,232,0,.15);
+
+      transition:
+        transform .2s ease,
+        box-shadow .2s ease,
+        opacity .2s ease;
+    }
+
+    .wts-login-button:hover:not(:disabled) {
+      transform: translateY(-2px);
+
+      box-shadow:
+        0 14px 34px
+        rgba(156,232,0,.23);
+    }
+
+    .wts-login-button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .wts-login-button:disabled {
+      opacity: .45;
+
+      cursor: not-allowed;
+
+      box-shadow: none;
+    }
+
+    .wts-login-button i {
+      font-size: 14px;
+    }
+
+    /* =========================
+       STATUS
+    ========================= */
+
+    .wts-login-status {
+      min-height: 18px;
+
+      margin-top: 10px;
+
+      text-align: center;
+
+      font-size: 11px;
+      line-height: 1.4;
+
+      color: var(--muted);
+    }
+
+    .wts-login-status.error {
+      color: var(--error);
+    }
+
+    .wts-login-status.success {
+      color: var(--green);
+    }
+
+    /* =========================
+       SECURITY
+    ========================= */
+
+    .wts-login-secure {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+
+      gap: 6px;
+
+      margin-top: 20px;
+
+      padding-top: 16px;
+
+      border-top:
+        1px solid
+        rgba(255,255,255,.055);
+
+      color: #5f686d;
+
+      font-size: 9.5px;
+    }
+
+    .wts-login-secure i {
+      color: var(--green);
+
+      font-size: 10px;
+    }
+
+    /* =========================
+       MOBILE
+    ========================= */
+
+    @media (max-width: 480px) {
+
+      body {
+        padding: 12px;
+      }
+
+      .wts-login-card {
+        width: 100%;
+
+        padding:
+          27px
+          20px
+          22px;
+
+        border-radius: 20px;
+      }
+
+      .wts-login-brand {
+        margin-bottom: 23px;
+      }
+
+      .wts-login-brand-name {
+        font-size: 23px;
+      }
+
+      .wts-login-heading {
+        margin-bottom: 23px;
+      }
+
+      .wts-login-heading h1 {
+        font-size: 24px;
+      }
+
+      .wts-login-heading p {
+        font-size: 12.5px;
+      }
+
+      .wts-login-form-group {
+        margin-bottom: 17px;
+      }
+
+      .wts-login-phone-wrapper,
+      .wts-login-password-wrapper,
+      .wts-login-button {
+        height: 52px;
+      }
+
+      .wts-login-options {
+        margin-bottom: 20px;
+      }
+
+      .wts-login-secure {
+        margin-top: 18px;
+
+        padding-top: 14px;
+      }
+    }
+
+    /* =========================
+       SHORT SCREEN
+    ========================= */
+
+    @media (max-height: 650px) {
+
+      .wts-login-card {
+        padding-top: 21px;
+        padding-bottom: 18px;
+      }
+
+      .wts-login-brand {
+        margin-bottom: 17px;
+      }
+
+      .wts-login-heading {
+        margin-bottom: 18px;
+      }
+
+      .wts-login-form-group {
+        margin-bottom: 13px;
+      }
+
+      .wts-login-helper {
+        margin-top: 5px;
+      }
+
+      .wts-login-options {
+        margin-bottom: 16px;
+      }
+
+      .wts-login-secure {
+        margin-top: 14px;
+        padding-top: 11px;
+      }
+    }
+
+    /* =========================
+       VERY SMALL DEVICES
+    ========================= */
+
+    @media (max-width: 350px) {
+
+      .wts-login-card {
+        padding-left: 15px;
+        padding-right: 15px;
+      }
+
+      .wts-login-country-code {
+        flex-basis: 76px;
+      }
+
+      .wts-login-remember {
+        font-size: 11px;
+      }
+    }
+
+
+
+/* =========================================================
+   WTS LOGIN BUTTON — ACTIVE / DISABLED STATE
+   ========================================================= */
+
+.wts-login-button.is-active {
+  opacity: 1;
+  cursor: pointer;
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--green),
+      var(--green-light)
+    );
+
+  color: #121719;
+
+  box-shadow:
+    0 10px 28px
+    rgba(156, 232, 0, 0.15);
+}
+
+.wts-login-button:not(.is-active) {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+
+    /* =========================================================
+       PRO ELITE COMPACT OVERRIDES
+    ========================================================= */
+    html, body { min-height: 100%; }
+    body { padding: 10px; }
+    .wts-login-card {
+      width: min(100%, 410px);
+      max-height: calc(100vh - 20px);
+      overflow-y: auto;
+      scrollbar-width: none;
+      padding: 22px 22px 18px;
+    }
+    .wts-login-card::-webkit-scrollbar { display:none; }
+    .wts-login-brand { margin-bottom: 17px; }
+    .wts-login-brand-name { font-size: 22px; }
+    .wts-login-heading { margin-bottom: 17px; }
+    .wts-login-heading h1 { font-size: 23px; }
+    .wts-login-heading p { margin-top: 5px; font-size: 12px; }
+    .wts-login-form-group { margin-bottom: 13px; }
+    .wts-login-form-label { margin-bottom: 6px; font-size: 12px; }
+    .wts-login-phone-wrapper, .wts-login-password-wrapper { height: 48px; }
+    .wts-login-helper { margin-top: 4px; font-size: 9.5px; }
+    .wts-login-options { margin: 2px 0 13px; }
+    .wts-login-remember { font-size: 11px; }
+    .wts-login-button { height: 48px; font-size: 14px; }
+    .wts-login-secure { margin-top: 12px; padding-top: 10px; font-size: 8.5px; }
+    @media (max-height: 700px) {
+      .wts-login-card { padding-top: 17px; padding-bottom: 14px; }
+      .wts-login-brand { margin-bottom: 13px; }
+      .wts-login-heading { margin-bottom: 13px; }
+      .wts-login-form-group { margin-bottom: 10px; }
+      .wts-login-phone-wrapper, .wts-login-password-wrapper, .wts-login-button { height: 44px; }
+      .wts-login-secure { margin-top: 9px; padding-top: 8px; }
+    }
+
   </style>
 </head>
+
 <body>
+
   <main class="wts-login-card">
+
     <div class="wts-login-content">
-      <div class="wts-login-brand"><div class="wts-login-brand-name">Log Statistics</div></div>
-      <div class="wts-login-heading"><h1>Welcome Back</h1><p>Log in to access your statistics dashboard</p></div>
-      <form id="wts-login-form" novalidate>
+
+      <!-- BRAND -->
+      <div class="wts-login-brand">
+        <div class="wts-login-brand-name">
+          Log Statistics
+        </div>
+      </div>
+
+      <!-- HEADING -->
+      <div class="wts-login-heading">
+        <h1>Welcome Back</h1>
+
+        <p>
+          Log in to access your statistics dashboard
+        </p>
+      </div>
+
+      <!-- LOGIN FORM -->
+      <form
+        id="wts-login-form"
+        novalidate
+      >
+
+        <!-- MOBILE NUMBER -->
         <div class="wts-login-form-group">
-          <label class="wts-login-form-label" for="wts-login-phone">Mobile Number</label>
+
+          <label
+            class="wts-login-form-label"
+            for="wts-login-phone"
+          >
+            Mobile Number
+          </label>
+
           <div class="wts-login-phone-wrapper">
+
             <div class="wts-login-country-code">
-              <svg class="wts-login-tz-flag" viewBox="0 0 120 80" xmlns="http://www.w3.org/2000/svg" aria-label="Tanzania" role="img">
-                <rect width="120" height="80" fill="#1EB53A"/><polygon points="0,0 120,0 0,80" fill="#00A3DD"/><polygon points="0,0 120,80 120,66 14,0" fill="#FCD116"/><polygon points="0,0 120,80 120,69 10,0" fill="#000000"/><polygon points="0,11 104,80 120,80 120,76 7,0 0,0" fill="#FCD116"/><polygon points="0,16 99,80 114,80 120,76 7,0 0,0" fill="#000000"/><polygon points="0,20 94,80 120,80 120,75 7,0 0,0" fill="#1EB53A"/>
-              </svg><span>+255</span>
+
+              <!-- Tanzania Flag -->
+              <svg
+                class="wts-login-tz-flag"
+                viewBox="0 0 120 80"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-label="Tanzania"
+                role="img"
+              >
+                <rect
+                  width="120"
+                  height="80"
+                  fill="#1EB53A"
+                />
+
+                <polygon
+                  points="0,0 120,0 0,80"
+                  fill="#00A3DD"
+                />
+
+                <polygon
+                  points="0,0 120,80 120,66 14,0"
+                  fill="#FCD116"
+                />
+
+                <polygon
+                  points="0,0 120,80 120,69 10,0"
+                  fill="#000000"
+                />
+
+                <polygon
+                  points="0,11 104,80 120,80 120,76 7,0 0,0"
+                  fill="#FCD116"
+                />
+
+                <polygon
+                  points="0,16 99,80 114,80 120,76 7,0 0,0"
+                  fill="#000000"
+                />
+
+                <polygon
+                  points="0,20 94,80 120,80 120,75 7,0 0,0"
+                  fill="#1EB53A"
+                />
+              </svg>
+
+              <span>+255</span>
+
             </div>
-            <input id="wts-login-phone" name="phone" class="wts-login-phone-input" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="9" minlength="9" pattern="[0-9]{9}" placeholder="Enter your mobile number" required>
+
+            <input
+              id="wts-login-phone"
+              name="phone"
+              class="wts-login-phone-input"
+              type="tel"
+              inputmode="numeric"
+              autocomplete="tel-national"
+              maxlength="9"
+              minlength="9"
+              pattern="[0-9]{9}"
+              placeholder="Enter your mobile number"
+              required
+            >
+
           </div>
-          <div class="wts-login-helper"><i class="fa-solid fa-circle-info"></i><span>Enter your mobile number without the country code (e.g., 712345678).</span></div>
+
+          <div class="wts-login-helper">
+
+            <i class="fa-solid fa-circle-info"></i>
+
+            <span>
+              Enter your mobile number without the country code
+              (e.g., 712345678).
+            </span>
+
+          </div>
+
         </div>
+
+
+        <!-- PASSWORD -->
         <div class="wts-login-form-group">
-          <label class="wts-login-form-label" for="wts-login-password">Password</label>
+
+          <label
+            class="wts-login-form-label"
+            for="wts-login-password"
+          >
+            Password
+          </label>
+
           <div class="wts-login-password-wrapper">
-            <input id="wts-login-password" name="password" class="wts-login-password-input" type="password" autocomplete="current-password" minlength="4" placeholder="Enter your password" required>
-            <button type="button" class="wts-login-show-password" id="wts-login-toggle-password" aria-label="Show password" aria-pressed="false"><i class="fa-regular fa-eye"></i><span>Show</span></button>
+
+            <input
+              id="wts-login-password"
+              name="password"
+              class="wts-login-password-input"
+              type="password"
+              autocomplete="current-password"
+              minlength="4"
+              placeholder="Enter your password"
+              required
+            >
+
+            <button
+              type="button"
+              class="wts-login-show-password"
+              id="wts-login-toggle-password"
+              aria-label="Show password"
+              aria-pressed="false"
+            >
+              <i class="fa-regular fa-eye"></i>
+              <span>Show</span>
+            </button>
+
           </div>
-          <div class="wts-login-helper"><i class="fa-solid fa-shield-halved"></i><span>Min. 4 Characters</span></div>
+
+          <div class="wts-login-helper">
+
+            <i class="fa-solid fa-shield-halved"></i>
+
+            <span>
+              Min. 4 Characters
+            </span>
+
+          </div>
+
         </div>
-        <div class="wts-login-options"><label class="wts-login-remember"><input id="wts-login-remember" name="remember" type="checkbox"><span class="wts-login-custom-checkbox"></span><span>Keep me logged on this device</span></label></div>
-        <button type="submit" class="wts-login-button" id="wts-login-button" disabled><i class="fa-solid fa-arrow-right-to-bracket"></i><span>Log In</span></button>
-        <div id="wts-login-status" class="wts-login-status" aria-live="polite"></div>
-        <div class="wts-login-secure"><i class="fa-solid fa-lock"></i><span>Your login information is securely protected</span></div>
+
+
+        <!-- REMEMBER -->
+        <div class="wts-login-options">
+
+          <label class="wts-login-remember">
+
+            <input
+              id="wts-login-remember"
+              name="remember"
+              type="checkbox"
+            >
+
+            <span class="wts-login-custom-checkbox"></span>
+
+            <span>
+              Keep me logged on this device
+            </span>
+
+          </label>
+
+        </div>
+
+
+        <!-- LOGIN BUTTON -->
+        <button
+          type="submit"
+          class="wts-login-button"
+          id="wts-login-button"
+          disabled
+        >
+
+          <i class="fa-solid fa-arrow-right-to-bracket"></i>
+
+          <span>
+            Log In
+          </span>
+
+        </button>
+
+
+        <!-- STATUS -->
+        <div
+          id="wts-login-status"
+          class="wts-login-status"
+          aria-live="polite"
+        ></div>
+
+
+        <!-- SECURITY -->
+        <div class="wts-login-secure">
+
+          <i class="fa-solid fa-lock"></i>
+
+          <span>
+            Your login information is securely protected
+          </span>
+
+        </div>
+
       </form>
+
     </div>
+
   </main>
-  <!-- Authentication logic is handled by wts-login.js. -->
+
+
+  <!--
+    IMPORTANT:
+    Authentication logic is handled by wts-login.js.
+  -->
   <script src="./wts-login.js"></script>
-  <script src="./wts-history-layout.js"></script>
+
+  <script src="./wts-elite-flight.js"></script>
 </body>
 </html>
